@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 type UserType = 'cliente' | 'partner' | 'admin';
 
@@ -9,10 +10,36 @@ interface LoginProps {
 }
 
 export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegisterClick }) => {
-  const [userType, setUserType] = useState<UserType>('cliente');
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) {
+        setError(signInError.message);
+        return;
+      }
+      if (!authData.user) return;
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('user_type')
+        .eq('id', authData.user.id)
+        .single();
+      const userType: UserType = (profile?.user_type as UserType) ?? 'cliente';
+      onLoginSuccess(userType);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al iniciar sesión');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="relative min-h-screen w-full font-display flex items-center justify-center overflow-hidden">
@@ -62,36 +89,14 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
           <p className="text-gray-500 text-sm">Accede a tu panel de gestión personalizada</p>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-200 mb-8">
-          <button 
-            onClick={() => setUserType('cliente')}
-            className={`flex-1 pb-3 text-sm font-semibold flex flex-col items-center gap-2 transition-all relative ${userType === 'cliente' ? 'text-amber-500' : 'text-gray-400 hover:text-gray-600'}`}
-          >
-            <span className="material-symbols-outlined filled">person</span>
-            Cliente
-            {userType === 'cliente' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-amber-400 rounded-t-full"></div>}
-          </button>
-          <button 
-            onClick={() => setUserType('partner')}
-            className={`flex-1 pb-3 text-sm font-semibold flex flex-col items-center gap-2 transition-all relative ${userType === 'partner' ? 'text-amber-500' : 'text-gray-400 hover:text-gray-600'}`}
-          >
-            <span className="material-symbols-outlined filled">business_center</span>
-            Partner
-            {userType === 'partner' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-amber-400 rounded-t-full"></div>}
-          </button>
-          <button 
-            onClick={() => setUserType('admin')}
-            className={`flex-1 pb-3 text-sm font-semibold flex flex-col items-center gap-2 transition-all relative ${userType === 'admin' ? 'text-amber-500' : 'text-gray-400 hover:text-gray-600'}`}
-          >
-            <span className="material-symbols-outlined filled">admin_panel_settings</span>
-            Admin
-            {userType === 'admin' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-amber-400 rounded-t-full"></div>}
-          </button>
-        </div>
+        {error && (
+          <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+            {error}
+          </div>
+        )}
 
         {/* Form */}
-        <form onSubmit={(e) => { e.preventDefault(); onLoginSuccess(userType); }} className="flex flex-col gap-5">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             
             {/* Email */}
             <div className="flex flex-col gap-1.5">
@@ -148,9 +153,10 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
             {/* Submit Button */}
             <button 
                 type="submit"
-                className="mt-2 w-full bg-[#F59E0B] hover:bg-[#D97706] text-[#111827] font-bold py-3.5 rounded-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 group"
+                disabled={loading}
+                className="mt-2 w-full bg-[#F59E0B] hover:bg-[#D97706] disabled:opacity-60 disabled:cursor-not-allowed text-[#111827] font-bold py-3.5 rounded-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 group"
             >
-                Iniciar Sesión
+                {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
                 <span className="material-symbols-outlined text-[20px] group-hover:translate-x-1 transition-transform">login</span>
             </button>
 

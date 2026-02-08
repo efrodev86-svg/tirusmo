@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Home from './components/Home';
 import SearchResults from './components/SearchResults';
 import BookingWizard from './components/BookingWizard';
@@ -12,9 +12,13 @@ import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { TermsAndConditions } from './components/TermsAndConditions';
 import { ViewState, SearchParams, Hotel } from './types';
 import { getHotelById } from './services/hotelService';
+import { supabase } from './lib/supabase';
+
+const DASHBOARD_VIEWS = [ViewState.ADMIN_DASHBOARD, ViewState.PARTNER_DASHBOARD, ViewState.CUSTOMER_DASHBOARD];
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>(ViewState.HOME);
+  const [dashboardAllowed, setDashboardAllowed] = useState<boolean | null>(null);
   const [searchParams, setSearchParams] = useState<SearchParams>({
     destination: '',
     checkIn: '',
@@ -47,6 +51,32 @@ const App: React.FC = () => {
     setView(ViewState.HOME);
     window.scrollTo(0, 0);
   };
+
+  const handleLogout = () => {
+    supabase.auth.signOut();
+    setDashboardAllowed(null);
+    setView(ViewState.HOME);
+    window.scrollTo(0, 0);
+  };
+
+  // Proteger dashboards: solo permitir acceso con sesión válida
+  useEffect(() => {
+    if (!DASHBOARD_VIEWS.includes(view)) {
+      setDashboardAllowed(null);
+      return;
+    }
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return;
+      if (!session) {
+        setView(ViewState.LOGIN);
+        setDashboardAllowed(null);
+      } else {
+        setDashboardAllowed(true);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [view]);
 
   const handleLoginSuccess = (userType: 'cliente' | 'partner' | 'admin') => {
     if (userType === 'admin') {
@@ -82,21 +112,42 @@ const App: React.FC = () => {
   }
 
   if (view === ViewState.ADMIN_DASHBOARD) {
+    if (dashboardAllowed !== true) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-100">
+          <p className="text-gray-500">Verificando sesión...</p>
+        </div>
+      );
+    }
     return (
-      <AdminDashboard onLogout={handleBackToHome} />
+      <AdminDashboard onLogout={handleLogout} />
     );
   }
 
   if (view === ViewState.PARTNER_DASHBOARD) {
+    if (dashboardAllowed !== true) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-100">
+          <p className="text-gray-500">Verificando sesión...</p>
+        </div>
+      );
+    }
     return (
-      <PartnerDashboard onLogout={handleBackToHome} />
+      <PartnerDashboard onLogout={handleLogout} />
     );
   }
 
   if (view === ViewState.CUSTOMER_DASHBOARD) {
+    if (dashboardAllowed !== true) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-100">
+          <p className="text-gray-500">Verificando sesión...</p>
+        </div>
+      );
+    }
     return (
       <CustomerDashboard 
-        onLogout={handleBackToHome} 
+        onLogout={handleLogout} 
         onNewReservation={handleBackToHome} 
       />
     );
