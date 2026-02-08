@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, setRememberMe } from '../lib/supabase';
 
 type UserType = 'cliente' | 'partner' | 'admin';
 
@@ -13,6 +13,7 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMeChecked] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,6 +21,7 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
     e.preventDefault();
     setError(null);
     setLoading(true);
+    setRememberMe(rememberMe);
     try {
       const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
       if (signInError) {
@@ -140,12 +142,14 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
                 </div>
             </div>
 
-            {/* Remember Me */}
+            {/* Mantener sesión iniciada */}
             <div className="flex items-center gap-2">
                 <input 
                     id="remember" 
                     type="checkbox" 
-                    className="w-4 h-4 text-amber-500 border-gray-300 rounded focus:ring-amber-400 focus:ring-offset-0"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMeChecked(e.target.checked)}
+                    className="w-4 h-4 text-amber-500 border-gray-300 rounded focus:ring-amber-400 focus:ring-offset-0 cursor-pointer"
                 />
                 <label htmlFor="remember" className="text-sm text-gray-500 cursor-pointer select-none">Mantener sesión iniciada</label>
             </div>
