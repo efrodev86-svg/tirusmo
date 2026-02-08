@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CustomerStayTracking } from './CustomerStayTracking';
 import { CustomerCheckout } from './CustomerCheckout';
 import { CustomerProfile } from './CustomerProfile';
+import { supabase } from '../lib/supabase';
 
 interface CustomerDashboardProps {
   onLogout: () => void;
@@ -11,10 +12,33 @@ interface CustomerDashboardProps {
 type TabState = 'active' | 'past' | 'cancelled';
 type ViewState = 'list' | 'tracking' | 'checkout' | 'profile';
 
+interface UserProfile {
+  full_name: string | null;
+  email: string;
+}
+
 export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onLogout, onNewReservation }) => {
   const [activeTab, setActiveTab] = useState<TabState>('active');
   const [viewState, setViewState] = useState<ViewState>('list');
   const [selectedTrackingId, setSelectedTrackingId] = useState<string | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (cancelled || !user) return;
+      const { data: row } = await supabase.from('profiles').select('full_name, email').eq('id', user.id).single();
+      if (!cancelled) {
+        setUserProfile({
+          full_name: row?.full_name ?? null,
+          email: row?.email ?? user.email ?? '',
+        });
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
 
   const handleViewTracking = (id: string) => {
       setSelectedTrackingId(id);
@@ -101,10 +125,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onLogout, 
 
         <div className="p-4 border-t border-gray-100">
             <div className="flex items-center gap-3 mb-6 px-2">
-                <img src="https://ui-avatars.com/api/?name=Alex+Rivera&background=random" className="w-10 h-10 rounded-full" />
-                <div>
-                    <p className="text-sm font-bold text-[#111827]">Alex Rivera</p>
-                    <p className="text-[10px] text-gray-500">Membresía Gold</p>
+                <img
+                  src={`https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile?.full_name || userProfile?.email || 'Usuario')}&background=3B82F6&color=fff&size=80`}
+                  alt=""
+                  className="w-10 h-10 rounded-full"
+                />
+                <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-[#111827] truncate">{userProfile?.full_name || 'Usuario'}</p>
+                    <p className="text-[10px] text-gray-500 truncate">{userProfile?.email || '—'}</p>
                 </div>
             </div>
             <button onClick={onLogout} className="flex items-center gap-3 px-4 py-3 text-gray-500 hover:text-[#111827] rounded-lg font-medium text-sm w-full transition-colors border border-gray-200 hover:bg-gray-50">
