@@ -85,7 +85,7 @@ export const Register: React.FC<RegisterProps> = ({ onLoginClick, onRegisterSucc
                 <path d="M55 60 L72 75 L62 77 L66 86 L61 88 L57 79 L50 82 Z" fill="#86efac" stroke="white" strokeWidth="2" />
             </svg>
           </div>
-          <span className="text-2xl font-bold tracking-tight text-[#a8d8b7]">reservo.mx</span>
+          <span className="text-2xl font-bold tracking-tight text-[#a8d8b7]">escapar.mx</span>
         </div>
         <div className="flex items-center gap-4 text-white text-sm font-medium">
           <button onClick={onLoginClick} className="bg-white text-primary hover:bg-gray-100 px-4 py-2 rounded transition-colors font-bold">
@@ -230,7 +230,7 @@ export const Register: React.FC<RegisterProps> = ({ onLoginClick, onRegisterSucc
 
        {/* Footer Text */}
        <div className="absolute bottom-4 w-full text-center text-[10px] text-gray-400 z-20">
-         © 2024 Reservo.mx. Todos los derechos reservados.
+         © 2024 Escapar.mx. Todos los derechos reservados.
       </div>
       
     </div>

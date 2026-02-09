@@ -191,7 +191,7 @@ const App: React.FC = () => {
                 <path d="M55 60 L72 75 L62 77 L66 86 L61 88 L57 79 L50 82 Z" fill="#86efac" stroke="white" strokeWidth="2" />
             </svg>
           </div>
-          <span className="text-2xl font-bold text-[#a8d8b7] tracking-tight">reservo.mx</span>
+          <span className="text-2xl font-bold text-[#a8d8b7] tracking-tight">escapar.mx</span>
         </div>
         <div className="flex flex-1 justify-end items-center gap-4 lg:gap-8">
           <nav className="hidden md:flex items-center gap-9">
@@ -264,7 +264,7 @@ const App: React.FC = () => {
                             <path d="M55 60 L72 75 L62 77 L66 86 L61 88 L57 79 L50 82 Z" fill="#86efac" stroke="white" strokeWidth="2" />
                         </svg>
                     </div>
-                    <span className="text-xl font-bold text-[#a8d8b7] tracking-tight">reservo.mx</span>
+                    <span className="text-xl font-bold text-[#a8d8b7] tracking-tight">escapar.mx</span>
                 </div>
                 <p className="text-sm text-gray-500 leading-relaxed">
                     Encuentra y reserva los mejores hoteles spa del mundo. Relajación, lujo y bienestar al alcance de un clic.
@@ -293,7 +293,7 @@ const App: React.FC = () => {
             </div>
         </div>
         <div className="max-w-[1200px] mx-auto mt-12 pt-8 border-t border-gray-100 dark:border-gray-800 text-center">
-            <p className="text-xs text-gray-400">© 2024 Reservo.mx. Todos los derechos reservados.</p>
+            <p className="text-xs text-gray-400">© 2024 Escapar.mx. Todos los derechos reservados.</p>
         </div>
       </footer>
     </div>

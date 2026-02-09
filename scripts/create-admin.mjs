@@ -38,7 +38,7 @@ function randomPassword(length = 14) {
   return s;
 }
 
-const ADMIN_EMAIL = 'admin@reservo.mx';
+const ADMIN_EMAIL = 'admin@escapar.mx';
 
 async function main() {
   const env = loadEnv();

@@ -69,7 +69,7 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
                 <path d="M55 60 L72 75 L62 77 L66 86 L61 88 L57 79 L50 82 Z" fill="#86efac" stroke="white" strokeWidth="2" />
             </svg>
           </div>
-          <span className="text-2xl font-bold tracking-tight text-[#a8d8b7]">reservo.mx</span>
+          <span className="text-2xl font-bold tracking-tight text-[#a8d8b7]">escapar.mx</span>
         </div>
         <div className="flex items-center gap-4 text-white text-sm font-medium">
           <a href="#" className="hover:text-amber-400 transition-colors">Ayuda</a>
@@ -180,7 +180,7 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
              <a href="#" className="hover:text-white">Cookies</a>
          </div>
          <div>
-             © 2024 Reservo.mx. Todos los derechos reservados.
+             © 2024 Escapar.mx. Todos los derechos reservados.
          </div>
       </div>
     </div>
