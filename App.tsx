@@ -90,6 +90,21 @@ const App: React.FC = () => {
     }
   };
 
+  const handleLoginClick = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('user_type')
+        .eq('id', session.user.id)
+        .single();
+      const userType = (profile?.user_type as 'cliente' | 'partner' | 'admin') ?? 'cliente';
+      handleLoginSuccess(userType);
+    } else {
+      setView(ViewState.LOGIN);
+    }
+  };
+
   // View Routing
   if (view === ViewState.LOGIN) {
       return (
@@ -185,7 +200,7 @@ const App: React.FC = () => {
           </nav>
           <div className="flex gap-2 items-center">
              <button 
-                onClick={() => setView(ViewState.LOGIN)}
+                onClick={handleLoginClick}
                 className="bg-primary hover:bg-blue-600 text-white px-5 py-2.5 rounded-full font-bold text-sm transition-all shadow-md hover:shadow-lg flex items-center gap-2"
              >
                 <span className="material-symbols-outlined text-[20px]">account_circle</span>
