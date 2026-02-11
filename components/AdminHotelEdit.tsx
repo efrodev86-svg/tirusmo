@@ -1,5 +1,59 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+
+function loadGoogleMapsScript(): Promise<void> {
+  if (typeof window === 'undefined' || !GOOGLE_MAPS_API_KEY) return Promise.reject(new Error('No API key'));
+  if (window.__gmLoaded) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places&callback=__gmOnLoad`;
+    script.async = true;
+    window.__gmOnLoad = () => {
+      window.__gmLoaded = true;
+      resolve();
+    };
+    script.onerror = () => reject(new Error('Error cargando Google Maps'));
+    document.head.appendChild(script);
+  });
+}
+
+async function reverseGeocode(lat: number, lon: number): Promise<string> {
+  if (GOOGLE_MAPS_API_KEY) {
+    try {
+      const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=${GOOGLE_MAPS_API_KEY}`);
+      const data = await res.json();
+      const addr = data?.results?.[0]?.formatted_address;
+      if (addr) return addr;
+    } catch {
+      // fallback to Nominatim
+    }
+  }
+  const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`, {
+    headers: { Accept: 'application/json' },
+  });
+  const data = await res.json();
+  return data?.display_name || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+}
+
+/** Geocodifica una dirección a coordenadas (para mostrar en el mapa). */
+async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
+  if (!address.trim()) return null;
+  if (GOOGLE_MAPS_API_KEY) {
+    try {
+      const res = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address.trim())}&key=${GOOGLE_MAPS_API_KEY}`
+      );
+      const data = await res.json();
+      const loc = data?.results?.[0]?.geometry?.location;
+      if (loc?.lat != null && loc?.lng != null) return { lat: Number(loc.lat), lng: Number(loc.lng) };
+    } catch {
+      // ignore
+    }
+  }
+  return null;
+}
 
 type HotelForm = {
   name: string;
@@ -37,6 +91,14 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [autocompleteReady, setAutocompleteReady] = useState(false);
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const locationInputRef = useRef<HTMLInputElement>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<unknown>(null);
+  const markerInstanceRef = useRef<unknown>(null);
+  const didGeocodeInitialRef = useRef(false);
 
   const idNum = Number(hotelId);
   const validId = !Number.isNaN(idNum) && idNum > 0;
@@ -78,6 +140,140 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
     })();
     return () => { cancelled = true; };
   }, [idNum, validId]);
+
+  // Geocodificar la ubicación inicial del hotel (solo una vez al cargar) para el mapa
+  useEffect(() => {
+    if (loading || !form.location.trim() || !GOOGLE_MAPS_API_KEY || didGeocodeInitialRef.current) return;
+    didGeocodeInitialRef.current = true;
+    let cancelled = false;
+    geocodeAddress(form.location).then((coords) => {
+      if (!cancelled && coords) setMapCenter(coords);
+    });
+    return () => { cancelled = true; };
+  }, [loading, form.location]);
+
+  // Precargar script de Google Maps al montar (si hay API key) para tener autocompletado listo antes
+  useEffect(() => {
+    if (!GOOGLE_MAPS_API_KEY) return;
+    loadGoogleMapsScript().catch(() => {});
+  }, [GOOGLE_MAPS_API_KEY]);
+
+  // Inicializar Autocomplete cuando el formulario esté visible y el script cargado
+  useEffect(() => {
+    if (!GOOGLE_MAPS_API_KEY || loading) return;
+    const input = locationInputRef.current;
+    if (!input || !window.google?.maps?.places) return;
+    let cancelled = false;
+    if (window.__gmLoaded) {
+      try {
+        const autocomplete = new window.google.maps.places.Autocomplete(input, {
+          types: ['establishment', 'geocode'],
+        });
+        autocomplete.addListener('place_changed', () => {
+          const place = autocomplete.getPlace();
+          if (place?.formatted_address) setForm((f) => ({ ...f, location: place.formatted_address! }));
+          const loc = place?.geometry?.location;
+          if (loc) setMapCenter({ lat: loc.lat(), lng: loc.lng() });
+        });
+        if (!cancelled) setAutocompleteReady(true);
+      } catch {
+        // API no disponible o error de configuración
+      }
+      return;
+    }
+    loadGoogleMapsScript()
+      .then(() => {
+        if (cancelled || !locationInputRef.current || !window.google?.maps?.places) return;
+        const autocomplete = new window.google.maps.places.Autocomplete(locationInputRef.current, {
+          types: ['establishment', 'geocode'],
+        });
+        autocomplete.addListener('place_changed', () => {
+          const place = autocomplete.getPlace();
+          if (place?.formatted_address) setForm((f) => ({ ...f, location: place.formatted_address! }));
+          const loc = place?.geometry?.location;
+          if (loc) setMapCenter({ lat: loc.lat(), lng: loc.lng() });
+        });
+        setAutocompleteReady(true);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [GOOGLE_MAPS_API_KEY, loading]);
+
+  // Actualizar dirección desde coordenadas (clic en mapa o arrastrar marcador)
+  const updateLocationFromCoords = React.useCallback(async (lat: number, lng: number) => {
+    setMapCenter({ lat, lng });
+    try {
+      const address = await reverseGeocode(lat, lng);
+      setForm((f) => ({ ...f, location: address }));
+    } catch {
+      setForm((f) => ({ ...f, location: `${lat.toFixed(5)}, ${lng.toFixed(5)}` }));
+    }
+  }, []);
+
+  // Crear o actualizar el mapa cuando hay coordenadas y el script está cargado
+  useEffect(() => {
+    if (!mapCenter || !GOOGLE_MAPS_API_KEY || !window.__gmLoaded || !window.google?.maps) return;
+    const container = mapContainerRef.current;
+    if (!container) return;
+
+    const center = { lat: mapCenter.lat, lng: mapCenter.lng };
+    const { Map: GMap, Marker: GMarker } = window.google.maps;
+
+    if (mapInstanceRef.current && markerInstanceRef.current) {
+      (mapInstanceRef.current as { setCenter: (c: { lat: number; lng: number }) => void }).setCenter(center);
+      (markerInstanceRef.current as { setPosition: (p: { lat: number; lng: number }) => void }).setPosition(center);
+      return;
+    }
+
+    const map = new GMap(container, { center, zoom: 15 });
+    const marker = new GMarker({ position: center, map, draggable: true });
+
+    // Clic en el mapa: colocar marcador y actualizar dirección
+    map.addListener('click', (e: { latLng?: { lat: () => number; lng: () => number } }) => {
+      if (!e.latLng) return;
+      const lat = e.latLng.lat();
+      const lng = e.latLng.lng();
+      marker.setPosition({ lat, lng });
+      updateLocationFromCoords(lat, lng);
+    });
+
+    // Arrastrar el marcador: actualizar dirección al soltar
+    marker.addListener('dragend', () => {
+      const pos = marker.getPosition();
+      if (pos) updateLocationFromCoords(pos.lat(), pos.lng());
+    });
+
+    mapInstanceRef.current = map;
+    markerInstanceRef.current = marker;
+  }, [mapCenter, GOOGLE_MAPS_API_KEY, updateLocationFromCoords]);
+
+  const handleUseMyLocation = () => {
+    if (!navigator.geolocation) {
+      setError('Tu navegador no soporta geolocalización');
+      return;
+    }
+    setLocationLoading(true);
+    setError(null);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          setMapCenter({ lat: latitude, lng: longitude });
+          const address = await reverseGeocode(latitude, longitude);
+          setForm((f) => ({ ...f, location: address }));
+        } catch (e) {
+          setError('No se pudo obtener la dirección');
+        } finally {
+          setLocationLoading(false);
+        }
+      },
+      () => {
+        setError('No se pudo obtener tu ubicación. Comprueba los permisos del navegador.');
+        setLocationLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,7 +344,53 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Ubicación *</label>
-              <input type="text" value={form.location} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary" required />
+              <div className="flex gap-2">
+                <input
+                  ref={locationInputRef}
+                  type="text"
+                  value={form.location}
+                  onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
+                  className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary"
+                  placeholder={GOOGLE_MAPS_API_KEY ? 'Escribe la dirección o el nombre del lugar...' : 'Dirección o ciudad del hotel'}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={handleUseMyLocation}
+                  disabled={locationLoading}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-bold text-gray-700 disabled:opacity-50 whitespace-nowrap"
+                  title="Usar mi ubicación actual"
+                >
+                  <span className="material-symbols-outlined text-[20px]">my_location</span>
+                  {locationLoading ? '...' : 'Mi ubicación'}
+                </button>
+              </div>
+              {GOOGLE_MAPS_API_KEY && !autocompleteReady && (
+                <p className="text-xs text-gray-500 mt-1">Escribe y aparecerán sugerencias de Google Maps.</p>
+              )}
+              {GOOGLE_MAPS_API_KEY && autocompleteReady && (
+                <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">check_circle</span> Autocompletado activo</p>
+              )}
+              {GOOGLE_MAPS_API_KEY && (
+                <div className="mt-3">
+                  <p className="text-xs text-gray-500 mb-1.5 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">touch_app</span>
+                    Haz clic en el mapa o arrastra el marcador para elegir la ubicación. La dirección se actualizará al instante.
+                  </p>
+                  <div className="rounded-xl overflow-hidden border border-gray-200 bg-gray-100" style={{ minHeight: 220 }}>
+                    {mapCenter ? (
+                      <div ref={mapContainerRef} className="w-full h-[220px] cursor-crosshair" />
+                    ) : (
+                      <div className="w-full h-[220px] flex items-center justify-center text-gray-500 text-sm">
+                        <span className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[24px]">location_on</span>
+                          La ubicación se verá aquí al elegir una dirección o usar Mi ubicación
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
