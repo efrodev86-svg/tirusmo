@@ -295,6 +295,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   // User State
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [usersRefreshKey, setUsersRefreshKey] = useState(0);
 
   // Hotel State & View
   const [selectedHotelId, setSelectedHotelId] = useState<string | null>(null);
@@ -334,9 +335,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             return <AdminReservations onSelectReservation={handleSelectReservation} />;
         case 'users':
             if (selectedUserId) {
-                return <AdminUserDetail userId={selectedUserId} onBack={() => setSelectedUserId(null)} />;
+                return (
+                  <AdminUserDetail
+                    userId={selectedUserId}
+                    onBack={() => setSelectedUserId(null)}
+                    onDeleted={() => { setUsersRefreshKey((k) => k + 1); setSelectedUserId(null); }}
+                  />
+                );
             }
-            return <AdminUsers onEditUser={handleEditUser} />;
+            return <AdminUsers onEditUser={handleEditUser} refreshKey={usersRefreshKey} />;
         case 'hotels':
             if (hotelViewState === 'inventory' && selectedHotelId) {
                 return <AdminRoomInventory hotelId={selectedHotelId} onBack={() => setHotelViewState('detail')} />;

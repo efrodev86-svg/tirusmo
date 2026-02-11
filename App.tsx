@@ -4,6 +4,7 @@ import SearchResults from './components/SearchResults';
 import BookingWizard from './components/BookingWizard';
 import { Login } from './components/Login';
 import { Register } from './components/Register';
+import { ResetPassword } from './components/ResetPassword';
 import { AdminDashboard } from './components/AdminDashboard';
 import { PartnerDashboard } from './components/PartnerDashboard';
 import { CustomerDashboard } from './components/CustomerDashboard';
@@ -58,6 +59,14 @@ const App: React.FC = () => {
     setView(ViewState.HOME);
     window.scrollTo(0, 0);
   };
+
+  // Detectar enlace de restablecimiento de contraseña (hash type=recovery)
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash && hash.includes('type=recovery')) {
+      setView(ViewState.RESET_PASSWORD);
+    }
+  }, []);
 
   // Proteger dashboards: solo permitir acceso con sesión válida
   useEffect(() => {
@@ -124,6 +133,21 @@ const App: React.FC = () => {
             onRegisterSuccess={() => setView(ViewState.HOME)}
         />
       );
+  }
+
+  if (view === ViewState.RESET_PASSWORD) {
+    return (
+      <ResetPassword
+        onSuccess={() => {
+          window.history.replaceState(null, '', window.location.pathname);
+          setView(ViewState.LOGIN);
+        }}
+        onBack={() => {
+          window.history.replaceState(null, '', window.location.pathname);
+          setView(ViewState.LOGIN);
+        }}
+      />
+    );
   }
 
   if (view === ViewState.ADMIN_DASHBOARD) {

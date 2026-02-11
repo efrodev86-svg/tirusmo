@@ -16,6 +16,28 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
   const [rememberMe, setRememberMeChecked] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotEmailSent, setForgotEmailSent] = useState(false);
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/`,
+      });
+      if (resetError) {
+        setError(resetError.message);
+        return;
+      }
+      setForgotEmailSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al enviar el enlace');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,10 +53,19 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
       if (!authData.user) return;
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('user_type')
+        .select('user_type, is_active')
         .eq('id', authData.user.id)
         .single();
-      const userType: UserType = (profile?.user_type as UserType) ?? 'cliente';
+      if (profileError || !profile) {
+        setError(profileError?.message || 'Error al cargar el perfil');
+        return;
+      }
+      if (profile.is_active === false) {
+        await supabase.auth.signOut();
+        setError('Tu cuenta está desactivada. Contacta al administrador.');
+        return;
+      }
+      const userType: UserType = (profile.user_type as UserType) ?? 'cliente';
       onLoginSuccess(userType);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al iniciar sesión');
@@ -97,7 +128,59 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
           </div>
         )}
 
-        {/* Form */}
+        {showForgotPassword ? (
+          <>
+            <div className="flex flex-col items-center text-center mb-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-2">Restablecer contraseña</h2>
+              <p className="text-gray-500 text-sm">Ingresa tu correo y te enviaremos un enlace para crear una nueva contraseña.</p>
+            </div>
+            {forgotEmailSent ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-lg bg-green-50 border border-green-200 text-green-800 text-sm">
+                  Revisa tu correo. Te enviamos un enlace para restablecer tu contraseña. Si no lo ves, revisa la carpeta de spam.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setShowForgotPassword(false); setForgotEmailSent(false); }}
+                  className="w-full text-sm font-bold text-amber-500 hover:text-amber-600"
+                >
+                  ← Volver al inicio de sesión
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleForgotSubmit} className="flex flex-col gap-5">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-gray-700">Correo Electrónico</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 material-symbols-outlined text-[20px]">mail</span>
+                    <input
+                      type="email"
+                      placeholder="ejemplo@correo.com"
+                      required
+                      className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:ring-1 focus:ring-amber-400 focus:border-amber-400 outline-none transition-all placeholder:text-gray-300"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-[#F59E0B] hover:bg-[#D97706] disabled:opacity-60 text-[#111827] font-bold py-3.5 rounded-lg shadow-lg transition-all"
+                >
+                  {loading ? 'Enviando...' : 'Enviar enlace'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPassword(false)}
+                  className="text-sm text-gray-500 hover:text-amber-500"
+                >
+                  ← Volver al inicio de sesión
+                </button>
+              </form>
+            )}
+          </>
+        ) : (
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             
             {/* Email */}
@@ -119,7 +202,7 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
             <div className="flex flex-col gap-1.5">
                 <div className="flex justify-between items-center">
                     <label className="text-xs font-bold text-gray-700">Contraseña</label>
-                    <a href="#" className="text-xs font-bold text-amber-500 hover:underline">¿Olvidaste tu contraseña?</a>
+                    <button type="button" onClick={() => setShowForgotPassword(true)} className="text-xs font-bold text-amber-500 hover:underline">¿Olvidaste tu contraseña?</button>
                 </div>
                 <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 material-symbols-outlined text-[20px]">lock</span>
@@ -170,6 +253,7 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
             </div>
 
         </form>
+        )}
       </div>
       
       {/* Footer Text */}
