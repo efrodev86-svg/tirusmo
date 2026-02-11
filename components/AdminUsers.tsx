@@ -45,6 +45,10 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ onEditUser, refreshKey =
   const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [pageSize, setPageSize] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const PAGE_SIZE_OPTIONS = [5, 10, 20, 50] as const;
 
   const loadUsers = React.useCallback(async () => {
     setLoading(true);
@@ -78,23 +82,46 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ onEditUser, refreshKey =
     loadUsers();
   }, [loadUsers, refreshKey]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateLoading(true);
     setError(null);
     try {
-      const { error: signUpErr } = await supabase.auth.signUp({
-        email: createForm.email.trim(),
-        password: createForm.password,
-        options: { data: { full_name: createForm.full_name.trim() || undefined, user_type: createForm.user_type } },
-      });
-      if (signUpErr) {
-        setError(signUpErr.message);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setError('Debes tener sesión iniciada como admin.');
         return;
       }
-      await supabase.auth.signOut();
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-create-user`;
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (!anonKey) {
+        setError('Configuración incompleta (VITE_SUPABASE_ANON_KEY).');
+        return;
+      }
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${anonKey}` },
+        body: JSON.stringify({
+          access_token: session.access_token,
+          email: createForm.email.trim(),
+          password: createForm.password,
+          full_name: createForm.full_name.trim() || null,
+          user_type: createForm.user_type,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || `Error ${res.status}`);
+        return;
+      }
       setShowCreateModal(false);
       setCreateForm({ email: '', password: DEFAULT_PASSWORD, full_name: '', user_type: 'cliente' });
+      setCurrentPage(1);
+      await new Promise((r) => setTimeout(r, 300));
       await loadUsers();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al crear usuario');
@@ -156,6 +183,18 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ onEditUser, refreshKey =
           u.email.toLowerCase().includes(search.toLowerCase())
       )
     : users;
+
+  const totalFiltered = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+  const start = (safePage - 1) * pageSize;
+  const paginatedUsers = filtered.slice(start, start + pageSize);
+
+  const handlePageSizeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = Number(e.target.value) as 5 | 10 | 20 | 50;
+    setPageSize(value);
+    setCurrentPage(1);
+  };
 
   const getRoleBadge = (role: string) => {
     switch(role) {
@@ -233,7 +272,7 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ onEditUser, refreshKey =
                         </tr>
                     </thead>
                     <tbody className="text-sm">
-                        {filtered.map((user) => (
+                        {paginatedUsers.map((user) => (
                             <tr key={user.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                                 <td className="py-4 pl-6">
                                     <div className="flex items-center gap-3">
@@ -298,15 +337,63 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ onEditUser, refreshKey =
 
             {/* Pagination */}
             <div className="flex flex-col sm:flex-row justify-between items-center px-6 py-4 gap-4 bg-gray-50/30">
-                <span className="text-xs text-gray-400 font-medium">Mostrando {filtered.length} usuario{filtered.length !== 1 ? 's' : ''}</span>
-                <div className="flex gap-2">
-                    <button className="w-8 h-8 rounded border border-gray-200 bg-white flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 transition-colors">
+                <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-xs text-gray-400 font-medium">
+                        Mostrando {totalFiltered === 0 ? 0 : start + 1}-{Math.min(start + pageSize, totalFiltered)} de {totalFiltered} usuario{totalFiltered !== 1 ? 's' : ''}
+                    </span>
+                    <label className="flex items-center gap-2 text-xs text-gray-600">
+                        <span>Por página:</span>
+                        <select
+                            value={pageSize}
+                            onChange={handlePageSizeChange}
+                            className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm font-medium bg-white focus:ring-1 focus:ring-primary focus:border-primary"
+                        >
+                            {PAGE_SIZE_OPTIONS.map((n) => (
+                                <option key={n} value={n}>{n}</option>
+                            ))}
+                        </select>
+                    </label>
+                </div>
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={safePage <= 1}
+                        className="w-8 h-8 rounded border border-gray-200 bg-white flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
                         <span className="material-symbols-outlined text-[16px]">chevron_left</span>
                     </button>
-                    <button className="w-8 h-8 rounded bg-primary text-white text-xs font-bold flex items-center justify-center shadow-md shadow-blue-200">1</button>
-                    <button className="w-8 h-8 rounded border border-gray-200 bg-white text-gray-600 text-xs font-medium flex items-center justify-center hover:bg-gray-50">2</button>
-                    <button className="w-8 h-8 rounded border border-gray-200 bg-white text-gray-600 text-xs font-medium flex items-center justify-center hover:bg-gray-50">3</button>
-                    <button className="w-8 h-8 rounded border border-gray-200 bg-white flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 transition-colors">
+                    {Array.from({ length: totalPages }, (_, i) => i + 1)
+                        .filter((p) => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
+                        .reduce<number[]>((acc, p, i, arr) => {
+                            if (i > 0 && p - (arr[i - 1] ?? 0) > 1) acc.push(-1);
+                            acc.push(p);
+                            return acc;
+                        }, [])
+                        .map((p, idx) =>
+                            p === -1 ? (
+                                <span key={`ellipsis-${idx}`} className="w-8 text-center text-gray-400 text-xs">…</span>
+                            ) : (
+                                <button
+                                    key={p}
+                                    type="button"
+                                    onClick={() => setCurrentPage(p)}
+                                    className={`w-8 h-8 rounded text-xs font-bold flex items-center justify-center transition-colors ${
+                                        p === safePage
+                                            ? 'bg-primary text-white shadow-md shadow-blue-200'
+                                            : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {p}
+                                </button>
+                            )
+                        )}
+                    <button
+                        type="button"
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={safePage >= totalPages}
+                        className="w-8 h-8 rounded border border-gray-200 bg-white flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
                         <span className="material-symbols-outlined text-[16px]">chevron_right</span>
                     </button>
                 </div>
@@ -359,7 +446,6 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ onEditUser, refreshKey =
                         className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm"
                       >
                         <option value="cliente">Cliente</option>
-                        <option value="partner">Partner</option>
                         <option value="admin">Admin</option>
                       </select>
                     </div>
