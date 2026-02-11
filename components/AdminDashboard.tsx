@@ -5,6 +5,7 @@ import { AdminUsers } from './AdminUsers';
 import { AdminUserDetail } from './AdminUserDetail';
 import { AdminHotels } from './AdminHotels';
 import { AdminHotelDetail } from './AdminHotelDetail';
+import { AdminHotelEdit } from './AdminHotelEdit';
 import { AdminRoomInventory } from './AdminRoomInventory';
 
 interface AdminDashboardProps {
@@ -12,7 +13,7 @@ interface AdminDashboardProps {
 }
 
 type AdminTab = 'dashboard' | 'reservations' | 'users' | 'hotels' | 'reports';
-type HotelViewState = 'list' | 'detail' | 'inventory';
+type HotelViewState = 'list' | 'detail' | 'inventory' | 'edit';
 
 const DashboardHome = () => (
     <div className="animate-in fade-in zoom-in-95 duration-300">
@@ -300,7 +301,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   // Hotel State & View
   const [selectedHotelId, setSelectedHotelId] = useState<string | null>(null);
   const [hotelViewState, setHotelViewState] = useState<HotelViewState>('list');
+  const [hotelsRefreshKey, setHotelsRefreshKey] = useState(0);
 
+  const handleManageHotelRooms = (hotelId: string) => {
+    setSelectedHotelId(hotelId);
+    setHotelViewState('inventory');
+  };
 
   const handleSelectReservation = (id: string) => {
     setSelectedReservationId(id);
@@ -348,16 +354,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             if (hotelViewState === 'inventory' && selectedHotelId) {
                 return <AdminRoomInventory hotelId={selectedHotelId} onBack={() => setHotelViewState('detail')} />;
             }
+            if (hotelViewState === 'edit' && selectedHotelId) {
+                return <AdminHotelEdit hotelId={selectedHotelId} onBack={() => setHotelViewState('detail')} />;
+            }
             if (hotelViewState === 'detail' && selectedHotelId) {
                 return (
                     <AdminHotelDetail 
                         hotelId={selectedHotelId} 
-                        onBack={() => { setSelectedHotelId(null); setHotelViewState('list'); }} 
+                        onBack={() => { setSelectedHotelId(null); setHotelViewState('list'); setHotelsRefreshKey((k) => k + 1); }} 
                         onManageRooms={() => setHotelViewState('inventory')}
+                        onEditHotel={() => setHotelViewState('edit')}
                     />
                 );
             }
-            return <AdminHotels onSelectHotel={handleSelectHotel} />;
+            return <AdminHotels onSelectHotel={handleSelectHotel} onManageRooms={handleManageHotelRooms} refreshKey={hotelsRefreshKey} />;
         case 'reports':
             return <div className="p-8 text-center text-gray-500">Reportes y Analíticas (Próximamente)</div>;
         default:

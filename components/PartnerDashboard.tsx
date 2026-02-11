@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 import { PartnerRoomInventory } from './PartnerRoomInventory';
 import { PartnerRoomDetail } from './PartnerRoomDetail';
 import { PartnerBlocks } from './PartnerBlocks';
@@ -16,9 +17,33 @@ type RoomViewState = 'list' | 'detail';
 type ReservationViewState = 'list' | 'detail';
 type BlockViewState = 'list' | 'create';
 
+type PartnerHotel = { id: number; name: string; location: string; image: string | null } | null;
+
 export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState<PartnerTab>('dashboard');
-  
+  const [partnerHotel, setPartnerHotel] = useState<PartnerHotel>(null);
+  const [partnerName, setPartnerName] = useState<string>('');
+  const [loadingHotel, setLoadingHotel] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user || cancelled) {
+        setLoadingHotel(false);
+        return;
+      }
+      const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', session.user.id).maybeSingle();
+      if (profile && !cancelled) setPartnerName(profile.full_name || '');
+      const { data: hotel } = await supabase.from('hotels').select('id, name, location, image').eq('partner_id', session.user.id).maybeSingle();
+      if (!cancelled) {
+        setPartnerHotel(hotel ? { id: hotel.id, name: hotel.name, location: hotel.location, image: hotel.image } : null);
+      }
+      setLoadingHotel(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   // Rooms State
   const [roomViewState, setRoomViewState] = useState<RoomViewState>('list');
   const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null);
@@ -78,7 +103,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({ onLogout }) 
     <>
         {/* Top Header */}
         <header className="flex justify-between items-center mb-10">
-            <h1 className="text-2xl font-bold text-[#111827]">Panel de Gestión</h1>
+            <h1 className="text-2xl font-bold text-[#111827]">{partnerHotel ? `Panel de Gestión · ${partnerHotel.name}` : 'Panel de Gestión'}</h1>
             <div className="flex items-center gap-6">
                 <div className="flex items-center gap-2 text-gray-500 text-sm font-medium bg-white px-3 py-1.5 rounded-lg border border-gray-200">
                     <span className="material-symbols-outlined text-[18px]">calendar_today</span>
@@ -283,12 +308,12 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({ onLogout }) 
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col fixed inset-y-0 left-0 z-20 transition-all shadow-sm">
         <div className="p-6 border-b border-gray-100 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full overflow-hidden">
-             <img src="https://ui-avatars.com/api/?name=Partner+User&background=10B981&color=fff" className="w-full h-full object-cover" />
+          <div className="w-10 h-10 rounded-full overflow-hidden bg-[#10B981]/20 flex items-center justify-center">
+             <span className="material-symbols-outlined text-[#10B981] text-2xl">hotel</span>
           </div>
-          <div className="flex flex-col">
-              <span className="font-bold text-sm leading-tight">Partner Portal</span>
-              <span className="text-[10px] text-gray-400 font-medium">Gestión Hotelera</span>
+          <div className="flex flex-col min-w-0">
+              <span className="font-bold text-sm leading-tight truncate">{partnerHotel?.name || 'Partner Portal'}</span>
+              <span className="text-[10px] text-gray-400 font-medium">{partnerHotel ? partnerHotel.location : (loadingHotel ? 'Cargando...' : 'Sin hotel asignado')}</span>
           </div>
         </div>
         
@@ -352,6 +377,11 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({ onLogout }) 
 
       {/* Main Content */}
       <main className="flex-1 ml-64 p-8 overflow-x-hidden min-h-screen">
+        {!loadingHotel && !partnerHotel && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm">
+            No tienes un hotel asignado. Contacta al administrador para que vincule tu cuenta a un hotel.
+          </div>
+        )}
         {renderContent()}
       </main>
     </div>
