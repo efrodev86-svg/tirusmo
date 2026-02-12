@@ -1,5 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase, setRememberMe } from '../lib/supabase';
+
+const RECENT_EMAILS_COOKIE = 'login_recent_emails';
+const RECENT_EMAILS_MAX = 10;
+const COOKIE_MAX_AGE_DAYS = 90;
+
+function getRecentEmails(): string[] {
+  if (typeof document === 'undefined') return [];
+  try {
+    const match = document.cookie.match(new RegExp(`(?:^|; )${RECENT_EMAILS_COOKIE}=([^;]*)`));
+    const raw = match ? decodeURIComponent(match[1]) : '';
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((e): e is string => typeof e === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function addRecentEmail(email: string): void {
+  const trimmed = email.trim().toLowerCase();
+  if (!trimmed) return;
+  const current = getRecentEmails();
+  const next = [trimmed, ...current.filter((e) => e !== trimmed)].slice(0, RECENT_EMAILS_MAX);
+  try {
+    const value = encodeURIComponent(JSON.stringify(next));
+    const maxAge = COOKIE_MAX_AGE_DAYS * 24 * 60 * 60;
+    document.cookie = `${RECENT_EMAILS_COOKIE}=${value}; path=/; max-age=${maxAge}; SameSite=Lax`;
+  } catch {
+    // ignore
+  }
+}
 
 type UserType = 'cliente' | 'partner' | 'admin';
 
@@ -18,6 +49,11 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
   const [error, setError] = useState<string | null>(null);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotEmailSent, setForgotEmailSent] = useState(false);
+  const [recentEmails, setRecentEmails] = useState<string[]>([]);
+
+  useEffect(() => {
+    setRecentEmails(getRecentEmails());
+  }, []);
 
   const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,6 +101,8 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
         setError('Tu cuenta está desactivada. Contacta al administrador.');
         return;
       }
+      addRecentEmail(authData.user.email ?? email);
+      setRecentEmails(getRecentEmails());
       const userType: UserType = (profile.user_type as UserType) ?? 'cliente';
       onLoginSuccess(userType);
     } catch (err) {
@@ -190,12 +228,33 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 material-symbols-outlined text-[20px]">mail</span>
                     <input 
                         type="email" 
+                        list="login-recent-emails"
                         placeholder="ejemplo@correo.com"
                         className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:ring-1 focus:ring-amber-400 focus:border-amber-400 outline-none transition-all placeholder:text-gray-300"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                     />
                 </div>
+                {recentEmails.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Iniciaron sesión:</span>
+                    {recentEmails.slice(0, 5).map((e) => (
+                      <button
+                        key={e}
+                        type="button"
+                        onClick={() => setEmail(e)}
+                        className="text-xs px-2 py-1 rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors"
+                      >
+                        {e}
+                      </button>
+                    ))}
+                    <datalist id="login-recent-emails">
+                      {recentEmails.map((e) => (
+                        <option key={e} value={e} />
+                      ))}
+                    </datalist>
+                  </div>
+                )}
             </div>
 
             {/* Password */}
