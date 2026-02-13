@@ -67,6 +67,8 @@ type HotelForm = {
   description: string;
   tags: string[];
   isSoldOut: boolean;
+  check_in_time: string;
+  check_out_time: string;
 };
 
 interface AdminHotelEditProps {
@@ -87,6 +89,8 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
     description: '',
     tags: [],
     isSoldOut: false,
+    check_in_time: '15:00',
+    check_out_time: '11:00',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -113,7 +117,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
     (async () => {
       const { data, error: err } = await supabase
         .from('hotels')
-        .select('id, name, location, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut"')
+        .select('id, name, location, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", check_in_time, check_out_time')
         .eq('id', idNum)
         .single();
       if (err || !data) {
@@ -134,6 +138,8 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
           description: data.description || '',
           tags: Array.isArray(data.tags) ? data.tags : [],
           isSoldOut: Boolean(data.isSoldOut),
+          check_in_time: data.check_in_time || '15:00',
+          check_out_time: data.check_out_time || '11:00',
         });
       }
       setLoading(false);
@@ -295,6 +301,8 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
           description: form.description.trim() || null,
           tags: form.tags,
           isSoldOut: form.isSoldOut,
+          check_in_time: form.check_in_time.trim() || '15:00',
+          check_out_time: form.check_out_time.trim() || '11:00',
         })
         .eq('id', idNum);
       if (err) throw err;
@@ -429,6 +437,16 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Tags (separados por coma)</label>
               <input type="text" value={tagsText} onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) }))} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm" placeholder="playa, lujo" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Check-in (hora)</label>
+                <input type="text" value={form.check_in_time} onChange={(e) => setForm((f) => ({ ...f, check_in_time: e.target.value }))} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary" placeholder="15:00" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Check-out (hora)</label>
+                <input type="text" value={form.check_out_time} onChange={(e) => setForm((f) => ({ ...f, check_out_time: e.target.value }))} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary" placeholder="11:00" />
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <input type="checkbox" id="isSoldOut" checked={form.isSoldOut} onChange={(e) => setForm((f) => ({ ...f, isSoldOut: e.target.checked }))} className="rounded border-gray-300 text-primary focus:ring-primary" />

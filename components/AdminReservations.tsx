@@ -44,10 +44,12 @@ export const AdminReservations: React.FC<AdminReservationsProps> = ({ onSelectRe
   const [filterDateTo, setFilterDateTo] = useState('');
 
   const [counts, setCounts] = useState({ total: 0, confirmadas: 0, pendientes: 0, canceladas: 0, hoy: 0 });
+  const [emptyDueToPermissions, setEmptyDueToPermissions] = useState(false);
 
   const fetchReservations = useCallback(async (overridePage?: number) => {
     setLoading(true);
     setError(null);
+    setEmptyDueToPermissions(false);
     const pageToUse = overridePage !== undefined ? overridePage : page;
     try {
       const term = search.trim();
@@ -147,6 +149,17 @@ export const AdminReservations: React.FC<AdminReservationsProps> = ({ onSelectRe
 
       setReservations(rows);
       setTotalCount(count ?? 0);
+
+      const hasActiveFilters = !!(term || filterHotelId || filterStatus || filterDateFrom || filterDateTo);
+      if ((count ?? 0) === 0 && !hasActiveFilters) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase.from('profiles').select('user_type').eq('id', user.id).maybeSingle();
+          if (profile && (profile as { user_type?: string }).user_type !== 'admin') {
+            setEmptyDueToPermissions(true);
+          }
+        }
+      }
     } catch (e) {
       const msg = (e && typeof e === 'object' && 'message' in e && (e as { message: string }).message) || (e instanceof Error ? e.message : String(e)) || 'Error al cargar reservaciones';
       const hint = msg.includes('column') || msg.includes('does not exist') ? ' Ejecuta la migración 20250208200000_reservations_schema_and_seed en Supabase (SQL Editor).' : '';
@@ -326,7 +339,11 @@ export const AdminReservations: React.FC<AdminReservationsProps> = ({ onSelectRe
                     <div className="flex flex-col items-center gap-2 text-gray-500">
                       <span className="material-symbols-outlined text-[48px] text-gray-300">event_busy</span>
                       <p className="font-medium">No hay reservaciones</p>
-                      {(search || filterHotelId || filterStatus || filterDateFrom || filterDateTo) ? (
+                      {emptyDueToPermissions ? (
+                        <p className="text-sm max-w-md text-amber-700 bg-amber-50 p-3 rounded-lg">
+                          Tu usuario no tiene rol de administrador. Solo los perfiles con <code className="bg-amber-100 px-1 rounded text-xs">user_type = &apos;admin&apos;</code> en la tabla <code className="bg-amber-100 px-1 rounded text-xs">profiles</code> pueden ver el listado. Pide a un admin que asigne tu perfil como administrador en Admin → Usuarios, o actualiza <code className="bg-amber-100 px-1 rounded text-xs">user_type</code> en Supabase (SQL Editor).
+                        </p>
+                      ) : (search || filterHotelId || filterStatus || filterDateFrom || filterDateTo) ? (
                         <p className="text-sm max-w-md">No hay resultados con los filtros actuales. Amplía criterios o limpia los filtros (botón de refrescar) para ver todas las reservaciones.</p>
                       ) : (
                         <p className="text-sm max-w-md">Si acabas de configurar la base de datos, ejecuta en Supabase (SQL Editor) el script <code className="bg-gray-100 px-1 rounded text-xs">supabase/scripts/seed_reservations.sql</code> para crear reservaciones de prueba.</p>

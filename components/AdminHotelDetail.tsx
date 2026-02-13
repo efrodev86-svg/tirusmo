@@ -15,6 +15,8 @@ type HotelData = {
   tags: string[];
   isSoldOut: boolean;
   partner_id: string | null;
+  check_in_time: string | null;
+  check_out_time: string | null;
 };
 
 type RoomSummary = { type: string; total: number; available: number; price: number };
@@ -54,7 +56,7 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
       try {
         const { data: hotelRow, error: hotelErr } = await supabase
           .from('hotels')
-          .select('id, name, location, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", partner_id')
+          .select('id, name, location, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", partner_id, check_in_time, check_out_time')
           .eq('id', idNum)
           .single();
         if (hotelErr) throw hotelErr;
@@ -73,6 +75,8 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
           tags: Array.isArray(hotelRow.tags) ? hotelRow.tags : [],
           isSoldOut: Boolean(hotelRow.isSoldOut),
           partner_id: hotelRow.partner_id ? String(hotelRow.partner_id) : null,
+          check_in_time: hotelRow.check_in_time ?? null,
+          check_out_time: hotelRow.check_out_time ?? null,
         };
         setHotel(h);
 
@@ -208,6 +212,16 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
               <div className="flex gap-2 items-start">
                 <span className="material-symbols-outlined text-[#111827] mt-0.5 filled">location_on</span>
                 <p className="text-gray-600 text-sm">{hotel.location}</p>
+              </div>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Check-in / Check-out</p>
+              <div className="flex gap-2 items-center text-sm text-gray-600">
+                <span className="material-symbols-outlined text-[18px] text-primary">login</span>
+                <span>{hotel.check_in_time || '15:00'}</span>
+                <span className="text-gray-300">/</span>
+                <span className="material-symbols-outlined text-[18px] text-primary">logout</span>
+                <span>{hotel.check_out_time || '11:00'}</span>
               </div>
             </div>
             <div>

@@ -16,6 +16,8 @@ export type HotelRow = {
   isSoldOut: boolean | null;
   partner_id?: string | null;
   created_at?: string;
+  check_in_time?: string | null;
+  check_out_time?: string | null;
 };
 
 interface AdminHotelsProps {
@@ -57,7 +59,7 @@ export const AdminHotels: React.FC<AdminHotelsProps> = ({ onSelectHotel, onManag
       const to = from + pageSize - 1;
       let q = supabase
         .from('hotels')
-        .select('id, name, location, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", partner_id, created_at')
+        .select('id, name, location, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", partner_id, created_at, check_in_time, check_out_time')
         .order('id', { ascending: true })
         .range(from, to);
       if (search.trim()) q = q.or(`name.ilike.%${search.trim()}%,location.ilike.%${search.trim()}%`);
@@ -133,6 +135,7 @@ export const AdminHotels: React.FC<AdminHotelsProps> = ({ onSelectHotel, onManag
                     <th className="py-4 pl-6">Hotel</th>
                     <th className="py-4">Ubicación</th>
                     <th className="py-4 text-right">Precio</th>
+                    <th className="py-4 text-center">Check-in / Check-out</th>
                     <th className="py-4 text-center">Habitaciones</th>
                     <th className="py-4 text-center">Rating</th>
                     <th className="py-4 text-center">Estado</th>
@@ -153,6 +156,9 @@ export const AdminHotels: React.FC<AdminHotelsProps> = ({ onSelectHotel, onManag
                       </td>
                       <td className="py-4 text-gray-600 min-w-[150px]">{hotel.location}</td>
                       <td className="py-4 text-right font-medium">${Number(hotel.price).toLocaleString()}</td>
+                      <td className="py-4 text-center text-sm text-gray-600">
+                        {hotel.check_in_time || '15:00'} / {hotel.check_out_time || '11:00'}
+                      </td>
                       <td className="py-4 text-center font-medium text-[#111827]">{roomCounts[hotel.id] ?? 0}</td>
                       <td className="py-4 text-center">
                         <span className="inline-flex items-center gap-0.5 text-yellow-600 font-medium">
@@ -262,6 +268,8 @@ function CreateHotelModal({ onClose, onSuccess, saving, error, setSaving, setErr
   const [amenitiesText, setAmenitiesText] = useState('');
   const [tagsText, setTagsText] = useState('');
   const [isSoldOut, setIsSoldOut] = useState(false);
+  const [checkInTime, setCheckInTime] = useState('15:00');
+  const [checkOutTime, setCheckOutTime] = useState('11:00');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -271,7 +279,7 @@ function CreateHotelModal({ onClose, onSuccess, saving, error, setSaving, setErr
     setSaving(true);
     const amenities = amenitiesText.trim() ? amenitiesText.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : [];
     const tags = tagsText.trim() ? tagsText.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : [];
-    const { error: err } = await supabase.from('hotels').insert({ name: name.trim(), location: location.trim(), price: numPrice, rating: parseFloat(rating) || 0, reviews: parseInt(reviews, 10) || 0, image: image.trim() || null, stars: Math.min(5, Math.max(0, stars)), description: description.trim() || null, amenities, tags, isSoldOut });
+    const { error: err } = await supabase.from('hotels').insert({ name: name.trim(), location: location.trim(), price: numPrice, rating: parseFloat(rating) || 0, reviews: parseInt(reviews, 10) || 0, image: image.trim() || null, stars: Math.min(5, Math.max(0, stars)), description: description.trim() || null, amenities, tags, isSoldOut, check_in_time: checkInTime.trim() || '15:00', check_out_time: checkOutTime.trim() || '11:00' });
     setSaving(false);
     if (err) { setError(err.message); return; }
     onSuccess();
@@ -292,6 +300,10 @@ function CreateHotelModal({ onClose, onSuccess, saving, error, setSaving, setErr
           <div className="grid grid-cols-2 gap-4">
             <div><label className="text-xs font-bold text-gray-700">Precio *</label><input type="number" min="0" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" required /></div>
             <div><label className="text-xs font-bold text-gray-700">Estrellas (1-5)</label><select value={stars} onChange={(e) => setStars(Number(e.target.value))} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm">{[1,2,3,4,5].map((n) => <option key={n} value={n}>{n}</option>)}</select></div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="text-xs font-bold text-gray-700">Check-in (hora)</label><input type="text" value={checkInTime} onChange={(e) => setCheckInTime(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" placeholder="15:00" /></div>
+            <div><label className="text-xs font-bold text-gray-700">Check-out (hora)</label><input type="text" value={checkOutTime} onChange={(e) => setCheckOutTime(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" placeholder="11:00" /></div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className="text-xs font-bold text-gray-700">Rating</label><input type="number" min="0" max="5" step="0.1" value={rating} onChange={(e) => setRating(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" /></div>
