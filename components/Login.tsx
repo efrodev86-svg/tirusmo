@@ -1,36 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { supabase, setRememberMe } from '../lib/supabase';
-
-const RECENT_EMAILS_COOKIE = 'login_recent_emails';
-const RECENT_EMAILS_MAX = 10;
-const COOKIE_MAX_AGE_DAYS = 90;
-
-function getRecentEmails(): string[] {
-  if (typeof document === 'undefined') return [];
-  try {
-    const match = document.cookie.match(new RegExp(`(?:^|; )${RECENT_EMAILS_COOKIE}=([^;]*)`));
-    const raw = match ? decodeURIComponent(match[1]) : '';
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? parsed.filter((e): e is string => typeof e === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
-function addRecentEmail(email: string): void {
-  const trimmed = email.trim().toLowerCase();
-  if (!trimmed) return;
-  const current = getRecentEmails();
-  const next = [trimmed, ...current.filter((e) => e !== trimmed)].slice(0, RECENT_EMAILS_MAX);
-  try {
-    const value = encodeURIComponent(JSON.stringify(next));
-    const maxAge = COOKIE_MAX_AGE_DAYS * 24 * 60 * 60;
-    document.cookie = `${RECENT_EMAILS_COOKIE}=${value}; path=/; max-age=${maxAge}; SameSite=Lax`;
-  } catch {
-    // ignore
-  }
-}
 
 type UserType = 'cliente' | 'partner' | 'admin';
 
@@ -49,11 +18,6 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
   const [error, setError] = useState<string | null>(null);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotEmailSent, setForgotEmailSent] = useState(false);
-  const [recentEmails, setRecentEmails] = useState<string[]>([]);
-
-  useEffect(() => {
-    setRecentEmails(getRecentEmails());
-  }, []);
 
   const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,8 +65,6 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
         setError('Tu cuenta está desactivada. Contacta al administrador.');
         return;
       }
-      addRecentEmail(authData.user.email ?? email);
-      setRecentEmails(getRecentEmails());
       const userType: UserType = (profile.user_type as UserType) ?? 'cliente';
       onLoginSuccess(userType);
     } catch (err) {
@@ -153,8 +115,17 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
         
         {/* Icon & Welcome */}
         <div className="flex flex-col items-center text-center mb-8">
-          <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mb-4">
-             <span className="material-symbols-outlined text-amber-500 text-2xl">local_florist</span>
+          <div className="w-14 h-14 flex items-center justify-center mb-4">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
+              <path d="M35 30 V22 C35 18 38 15 42 15 H58 C62 15 65 18 65 22 V30" stroke="#2b7cee" strokeWidth="6" strokeLinecap="round" />
+              <rect x="20" y="30" width="60" height="50" rx="8" stroke="#2b7cee" strokeWidth="6" />
+              <line x1="32" y1="30" x2="32" y2="80" stroke="#2b7cee" strokeWidth="6" />
+              <path d="M30 80 V88" stroke="#2b7cee" strokeWidth="6" strokeLinecap="round" />
+              <path d="M70 80 V88" stroke="#2b7cee" strokeWidth="6" strokeLinecap="round" />
+              <path d="M55 45 A 10 10 0 0 1 65 55" stroke="#86efac" strokeWidth="4" strokeLinecap="round" />
+              <path d="M60 40 A 18 18 0 0 1 75 55" stroke="#86efac" strokeWidth="4" strokeLinecap="round" opacity="0.7" />
+              <path d="M55 60 L72 75 L62 77 L66 86 L61 88 L57 79 L50 82 Z" fill="#86efac" stroke="white" strokeWidth="2" />
+            </svg>
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Bienvenido de nuevo</h2>
           <p className="text-gray-500 text-sm">Accede a tu panel de gestión personalizada</p>
@@ -228,33 +199,13 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 material-symbols-outlined text-[20px]">mail</span>
                     <input 
                         type="email" 
-                        list="login-recent-emails"
                         placeholder="ejemplo@correo.com"
+                        required
                         className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:ring-1 focus:ring-amber-400 focus:border-amber-400 outline-none transition-all placeholder:text-gray-300"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                     />
                 </div>
-                {recentEmails.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Iniciaron sesión:</span>
-                    {recentEmails.slice(0, 5).map((e) => (
-                      <button
-                        key={e}
-                        type="button"
-                        onClick={() => setEmail(e)}
-                        className="text-xs px-2 py-1 rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors"
-                      >
-                        {e}
-                      </button>
-                    ))}
-                    <datalist id="login-recent-emails">
-                      {recentEmails.map((e) => (
-                        <option key={e} value={e} />
-                      ))}
-                    </datalist>
-                  </div>
-                )}
             </div>
 
             {/* Password */}

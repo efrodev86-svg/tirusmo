@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Home from './components/Home';
 import SearchResults from './components/SearchResults';
 import BookingWizard from './components/BookingWizard';
@@ -17,6 +17,41 @@ import { supabase } from './lib/supabase';
 
 const DASHBOARD_VIEWS = [ViewState.ADMIN_DASHBOARD, ViewState.PARTNER_DASHBOARD, ViewState.CUSTOMER_DASHBOARD];
 
+// Rutas visibles en la URL y breadcrumb
+const VIEW_TO_PATH: Record<ViewState, string> = {
+  [ViewState.HOME]: '/',
+  [ViewState.RESULTS]: '/busqueda',
+  [ViewState.BOOKING]: '/reserva',
+  [ViewState.LOGIN]: '/login',
+  [ViewState.REGISTER]: '/registro',
+  [ViewState.RESET_PASSWORD]: '/restablecer-contrasena',
+  [ViewState.ADMIN_DASHBOARD]: '/admin',
+  [ViewState.PARTNER_DASHBOARD]: '/socio',
+  [ViewState.CUSTOMER_DASHBOARD]: '/mi-cuenta',
+  [ViewState.ABOUT_US]: '/sobre-nosotros',
+  [ViewState.PRIVACY]: '/privacidad',
+  [ViewState.TERMS]: '/terminos',
+};
+
+const PATH_TO_VIEW: Record<string, ViewState> = Object.fromEntries(
+  (Object.entries(VIEW_TO_PATH) as [ViewState, string][]).map(([v, p]) => [p, v])
+);
+
+const VIEW_BREADCRUMB_LABEL: Record<ViewState, string> = {
+  [ViewState.HOME]: 'Inicio',
+  [ViewState.RESULTS]: 'Búsqueda',
+  [ViewState.BOOKING]: 'Reserva',
+  [ViewState.LOGIN]: 'Iniciar sesión',
+  [ViewState.REGISTER]: 'Registro',
+  [ViewState.RESET_PASSWORD]: 'Restablecer contraseña',
+  [ViewState.ADMIN_DASHBOARD]: 'Admin',
+  [ViewState.PARTNER_DASHBOARD]: 'Socio',
+  [ViewState.CUSTOMER_DASHBOARD]: 'Mi cuenta',
+  [ViewState.ABOUT_US]: 'Sobre nosotros',
+  [ViewState.PRIVACY]: 'Privacidad',
+  [ViewState.TERMS]: 'Términos y condiciones',
+};
+
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>(ViewState.HOME);
   const [dashboardAllowed, setDashboardAllowed] = useState<boolean | null>(null);
@@ -33,6 +68,67 @@ const App: React.FC = () => {
     budgetMax: 0
   });
   const [selectedHotel, setSelectedHotel] = useState<Hotel | null>(null);
+  const fromPopState = useRef(false);
+
+  // Sincronizar vista con URL al cargar y al usar atrás/adelante
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash && hash.includes('type=recovery')) return; // lo maneja el efecto de recuperación
+    const pathname = window.location.pathname.replace(/\/$/, '') || '/';
+    const viewFromPath = PATH_TO_VIEW[pathname];
+    if (viewFromPath != null) {
+      if (viewFromPath === ViewState.BOOKING) {
+        const params = new URLSearchParams(window.location.search);
+        const hotelId = params.get('hotel');
+        if (hotelId) {
+          const hotel = getHotelById(Number(hotelId));
+          if (hotel) {
+            setSelectedHotel(hotel);
+          }
+        }
+      }
+      fromPopState.current = true;
+      setView(viewFromPath);
+    }
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const pathname = window.location.pathname.replace(/\/$/, '') || '/';
+      const viewFromPath = PATH_TO_VIEW[pathname];
+      if (viewFromPath != null) {
+        if (viewFromPath === ViewState.BOOKING) {
+          const params = new URLSearchParams(window.location.search);
+          const hotelId = params.get('hotel');
+          if (hotelId) {
+            const hotel = getHotelById(Number(hotelId));
+            setSelectedHotel(hotel ?? null);
+          } else setSelectedHotel(null);
+        }
+        fromPopState.current = true;
+        setView(viewFromPath);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  // Actualizar URL cuando cambia la vista
+  useEffect(() => {
+    if (fromPopState.current) {
+      fromPopState.current = false;
+      return;
+    }
+    let path = VIEW_TO_PATH[view];
+    if (path === undefined) return;
+    if (view === ViewState.BOOKING && selectedHotel) {
+      path += `?hotel=${selectedHotel.id}`;
+    }
+    const newUrl = path + (view === ViewState.BOOKING && selectedHotel ? `?hotel=${selectedHotel.id}` : '');
+    if (window.location.pathname + window.location.search !== newUrl) {
+      window.history.pushState(null, '', newUrl);
+    }
+  }, [view, selectedHotel]);
 
   const handleSearch = (params: SearchParams) => {
     setSearchParams(params);
@@ -196,7 +292,8 @@ const App: React.FC = () => {
     <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark font-display text-[#111418] dark:text-white transition-colors duration-200">
       
       {/* Header */}
-      <header className="sticky top-0 z-50 flex items-center justify-between whitespace-nowrap border-b border-solid border-b-[#f0f2f4] bg-white/95 dark:bg-background-dark/95 backdrop-blur px-6 lg:px-10 py-3 dark:border-b-gray-800 transition-colors shadow-sm">
+      <header className="sticky top-0 z-50 flex flex-col border-b border-solid border-b-[#f0f2f4] bg-white/95 dark:bg-background-dark/95 backdrop-blur dark:border-b-gray-800 transition-colors shadow-sm">
+        <div className="flex items-center justify-between whitespace-nowrap px-6 lg:px-10 py-3">
         <div className="flex items-center gap-3 cursor-pointer group" onClick={handleBackToHome}>
           <div className="relative w-10 h-10">
             <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
@@ -231,6 +328,24 @@ const App: React.FC = () => {
                 <span>Iniciar Sesión</span>
              </button>
           </div>
+        </div>
+        </div>
+        {/* Rutas / breadcrumb */}
+        <div className="px-6 lg:px-10 pb-2 pt-0 flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
+          <span className="text-gray-400 dark:text-gray-500">Ruta:</span>
+          {view === ViewState.HOME ? (
+            <span className="font-medium text-gray-700 dark:text-gray-300">Inicio</span>
+          ) : (
+            <>
+              <button type="button" onClick={handleBackToHome} className="hover:text-primary transition-colors">Inicio</button>
+              <span aria-hidden>/</span>
+              <span className="font-medium text-gray-700 dark:text-gray-300">{VIEW_BREADCRUMB_LABEL[view]}</span>
+            </>
+          )}
+          <span className="ml-1 text-gray-400 dark:text-gray-500 font-mono text-xs" title="URL actual">
+            {VIEW_TO_PATH[view]}
+            {view === ViewState.BOOKING && selectedHotel ? `?hotel=${selectedHotel.id}` : ''}
+          </span>
         </div>
       </header>
 
