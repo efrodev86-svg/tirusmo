@@ -379,6 +379,12 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
               {GOOGLE_MAPS_API_KEY && autocompleteReady && (
                 <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">check_circle</span> Autocompletado activo</p>
               )}
+              {!GOOGLE_MAPS_API_KEY && (
+                <p className="text-xs text-amber-700 bg-amber-50 p-2 rounded-lg mt-1 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[16px]">info</span>
+                  El mapa y el autocompletado de direcciones no se muestran porque no está configurada la variable de entorno <code className="bg-amber-100 px-1 rounded">VITE_GOOGLE_MAPS_API_KEY</code> en el entorno de producción. Configúrala en tu plataforma de despliegue (Vercel, Netlify, etc.) y vuelve a desplegar.
+                </p>
+              )}
               {GOOGLE_MAPS_API_KEY && (
                 <div className="mt-3">
                   <p className="text-xs text-gray-500 mb-1.5 flex items-center gap-1">
