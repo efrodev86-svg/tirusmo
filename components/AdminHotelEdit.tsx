@@ -55,6 +55,15 @@ async function geocodeAddress(address: string): Promise<{ lat: number; lng: numb
   return null;
 }
 
+const MEAL_PLAN_OPTIONS: { type: string; label: string }[] = [
+  { type: 'desayuno', label: 'Desayuno' },
+  { type: 'comida', label: 'Comida' },
+  { type: 'cena', label: 'Cena' },
+  { type: 'todo_incluido', label: 'Todo incluido' },
+];
+
+type MealPlanItem = { type: string; cost: number };
+
 type HotelForm = {
   name: string;
   location: string;
@@ -69,6 +78,7 @@ type HotelForm = {
   isSoldOut: boolean;
   check_in_time: string;
   check_out_time: string;
+  meal_plans: MealPlanItem[];
 };
 
 interface AdminHotelEditProps {
@@ -91,6 +101,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
     isSoldOut: false,
     check_in_time: '15:00',
     check_out_time: '11:00',
+    meal_plans: [],
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -117,7 +128,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
     (async () => {
       const { data, error: err } = await supabase
         .from('hotels')
-        .select('id, name, location, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", check_in_time, check_out_time')
+        .select('id, name, location, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", check_in_time, check_out_time, meal_plans')
         .eq('id', idNum)
         .single();
       if (err || !data) {
@@ -140,6 +151,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
           isSoldOut: Boolean(data.isSoldOut),
           check_in_time: data.check_in_time || '15:00',
           check_out_time: data.check_out_time || '11:00',
+          meal_plans: Array.isArray(data.meal_plans) ? data.meal_plans.map((m: { type?: string; cost?: number }) => ({ type: String(m?.type ?? ''), cost: Number(m?.cost ?? 0) })) : [],
         });
       }
       setLoading(false);
@@ -303,6 +315,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
           isSoldOut: form.isSoldOut,
           check_in_time: form.check_in_time.trim() || '15:00',
           check_out_time: form.check_out_time.trim() || '11:00',
+          meal_plans: form.meal_plans,
         })
         .eq('id', idNum);
       if (err) throw err;
@@ -452,6 +465,51 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">Check-out (hora)</label>
                 <input type="text" value={form.check_out_time} onChange={(e) => setForm((f) => ({ ...f, check_out_time: e.target.value }))} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary" placeholder="11:00" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Planes de comida</label>
+              <p className="text-xs text-gray-500 mb-2">Marca los que ofrece el hotel e indica el costo adicional por persona/noche (0 = incluido).</p>
+              <div className="space-y-2">
+                {MEAL_PLAN_OPTIONS.map((opt) => {
+                  const current = form.meal_plans.find((m) => m.type === opt.type);
+                  const offered = !!current;
+                  const cost = current?.cost ?? 0;
+                  return (
+                    <div key={opt.type} className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        id={`meal-${opt.type}`}
+                        checked={offered}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setForm((f) => ({ ...f, meal_plans: [...f.meal_plans.filter((m) => m.type !== opt.type), { type: opt.type, cost: 0 }] }));
+                          } else {
+                            setForm((f) => ({ ...f, meal_plans: f.meal_plans.filter((m) => m.type !== opt.type) }));
+                          }
+                        }}
+                        className="rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <label htmlFor={`meal-${opt.type}`} className="text-sm font-medium text-gray-700 min-w-[100px]">{opt.label}</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={offered ? cost : ''}
+                        onChange={(e) => setForm((f) => ({
+                          ...f,
+                          meal_plans: f.meal_plans.some((m) => m.type === opt.type)
+                            ? f.meal_plans.map((m) => (m.type === opt.type ? { ...m, cost: Number(e.target.value) || 0 } : m))
+                            : [...f.meal_plans, { type: opt.type, cost: Number(e.target.value) || 0 }],
+                        }))}
+                        className="w-24 px-2 py-1.5 border border-gray-200 rounded-lg text-sm"
+                        placeholder="Costo"
+                        disabled={!offered}
+                      />
+                      <span className="text-xs text-gray-400">MXN</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
             <div className="flex items-center gap-2">

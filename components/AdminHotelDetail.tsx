@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
+type MealPlanItem = { type: string; cost: number };
+
 type HotelData = {
   id: number;
   name: string;
@@ -17,6 +19,7 @@ type HotelData = {
   partner_id: string | null;
   check_in_time: string | null;
   check_out_time: string | null;
+  meal_plans: MealPlanItem[];
 };
 
 type RoomSummary = { type: string; total: number; available: number; price: number };
@@ -56,7 +59,7 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
       try {
         const { data: hotelRow, error: hotelErr } = await supabase
           .from('hotels')
-          .select('id, name, location, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", partner_id, check_in_time, check_out_time')
+          .select('id, name, location, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", partner_id, check_in_time, check_out_time, meal_plans')
           .eq('id', idNum)
           .single();
         if (hotelErr) throw hotelErr;
@@ -77,6 +80,7 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
           partner_id: hotelRow.partner_id ? String(hotelRow.partner_id) : null,
           check_in_time: hotelRow.check_in_time ?? null,
           check_out_time: hotelRow.check_out_time ?? null,
+          meal_plans: Array.isArray(hotelRow.meal_plans) ? hotelRow.meal_plans.map((m: { type?: string; cost?: number }) => ({ type: String(m?.type ?? ''), cost: Number(m?.cost ?? 0) })) : [],
         };
         setHotel(h);
 
@@ -239,6 +243,20 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
                 {hotel.isSoldOut ? 'Agotado' : 'Activo'}
               </span>
             </div>
+            {hotel.meal_plans && hotel.meal_plans.length > 0 && (
+              <div className="md:col-span-2">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Planes de comida</p>
+                <ul className="space-y-1">
+                  {hotel.meal_plans.map((m, i) => (
+                    <li key={i} className="flex items-center gap-2 text-sm text-gray-700">
+                      <span className="capitalize">{m.type.replace('_', ' ')}</span>
+                      <span className="text-gray-500">—</span>
+                      <span className="font-semibold text-[#111827]">{Number(m.cost) === 0 ? 'Incluido' : `$${Number(m.cost).toLocaleString('es-MX')} MXN`}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="md:col-span-2">
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Descripción</p>
               <p className="text-gray-600 text-sm leading-relaxed">{hotel.description || '—'}</p>

@@ -256,6 +256,13 @@ export const AdminHotels: React.FC<AdminHotelsProps> = ({ onSelectHotel, onManag
   );
 };
 
+const MEAL_PLAN_OPTIONS: { type: string; label: string }[] = [
+  { type: 'desayuno', label: 'Desayuno' },
+  { type: 'comida', label: 'Comida' },
+  { type: 'cena', label: 'Cena' },
+  { type: 'todo_incluido', label: 'Todo incluido' },
+];
+
 function CreateHotelModal({ onClose, onSuccess, saving, error, setSaving, setError }: { onClose: () => void; onSuccess: () => void; saving: boolean; error: string | null; setSaving: (v: boolean) => void; setError: (v: string | null) => void }) {
   const [name, setName] = useState('');
   const [location, setLocation] = useState('');
@@ -270,6 +277,9 @@ function CreateHotelModal({ onClose, onSuccess, saving, error, setSaving, setErr
   const [isSoldOut, setIsSoldOut] = useState(false);
   const [checkInTime, setCheckInTime] = useState('15:00');
   const [checkOutTime, setCheckOutTime] = useState('11:00');
+  const [mealPlans, setMealPlans] = useState<Record<string, { offered: boolean; cost: number }>>(
+    Object.fromEntries(MEAL_PLAN_OPTIONS.map((o) => [o.type, { offered: false, cost: 0 }]))
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -279,7 +289,8 @@ function CreateHotelModal({ onClose, onSuccess, saving, error, setSaving, setErr
     setSaving(true);
     const amenities = amenitiesText.trim() ? amenitiesText.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : [];
     const tags = tagsText.trim() ? tagsText.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : [];
-    const { error: err } = await supabase.from('hotels').insert({ name: name.trim(), location: location.trim(), price: numPrice, rating: parseFloat(rating) || 0, reviews: parseInt(reviews, 10) || 0, image: image.trim() || null, stars: Math.min(5, Math.max(0, stars)), description: description.trim() || null, amenities, tags, isSoldOut, check_in_time: checkInTime.trim() || '15:00', check_out_time: checkOutTime.trim() || '11:00' });
+    const meal_plans = MEAL_PLAN_OPTIONS.filter((o) => mealPlans[o.type]?.offered).map((o) => ({ type: o.type, cost: Number(mealPlans[o.type]?.cost) || 0 }));
+    const { error: err } = await supabase.from('hotels').insert({ name: name.trim(), location: location.trim(), price: numPrice, rating: parseFloat(rating) || 0, reviews: parseInt(reviews, 10) || 0, image: image.trim() || null, stars: Math.min(5, Math.max(0, stars)), description: description.trim() || null, amenities, tags, isSoldOut, check_in_time: checkInTime.trim() || '15:00', check_out_time: checkOutTime.trim() || '11:00', meal_plans });
     setSaving(false);
     if (err) { setError(err.message); return; }
     onSuccess();
@@ -304,6 +315,20 @@ function CreateHotelModal({ onClose, onSuccess, saving, error, setSaving, setErr
           <div className="grid grid-cols-2 gap-4">
             <div><label className="text-xs font-bold text-gray-700">Check-in (hora)</label><input type="text" value={checkInTime} onChange={(e) => setCheckInTime(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" placeholder="15:00" /></div>
             <div><label className="text-xs font-bold text-gray-700">Check-out (hora)</label><input type="text" value={checkOutTime} onChange={(e) => setCheckOutTime(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" placeholder="11:00" /></div>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-gray-700 block mb-2">Planes de comida (opcional)</label>
+            <p className="text-[10px] text-gray-500 mb-2">Marca los que ofrece el hotel e indica el costo adicional por persona/noche (0 = incluido).</p>
+            <div className="space-y-2">
+              {MEAL_PLAN_OPTIONS.map((opt) => (
+                <div key={opt.type} className="flex items-center gap-3">
+                  <input type="checkbox" id={`meal-${opt.type}`} checked={mealPlans[opt.type]?.offered ?? false} onChange={(e) => setMealPlans((prev) => ({ ...prev, [opt.type]: { ...prev[opt.type], offered: e.target.checked } }))} className="rounded border-gray-300" />
+                  <label htmlFor={`meal-${opt.type}`} className="text-sm font-medium text-gray-700 min-w-[100px]">{opt.label}</label>
+                  <input type="number" min="0" step="0.01" value={mealPlans[opt.type]?.cost ?? 0} onChange={(e) => setMealPlans((prev) => ({ ...prev, [opt.type]: { ...prev[opt.type], cost: Number(e.target.value) || 0 } }))} className="w-24 px-2 py-1.5 border border-gray-200 rounded-lg text-sm" placeholder="Costo" />
+                  <span className="text-xs text-gray-400">MXN</span>
+                </div>
+              ))}
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className="text-xs font-bold text-gray-700">Rating</label><input type="number" min="0" max="5" step="0.1" value={rating} onChange={(e) => setRating(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" /></div>

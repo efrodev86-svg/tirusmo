@@ -615,12 +615,25 @@ export const AdminReservationDetail: React.FC<AdminReservationDetailProps> = ({ 
                 <span className="font-bold text-2xl text-primary">{formatCurrency(reservation.total)}</span>
               </div>
             </div>
-            {reservation.status !== 'CANCELADA' && reservation.amountPaid < reservation.total && (
+            {reservation.status !== 'CANCELADA' && (
               <>
                 {!showRegisterPayment ? (
-                  <button type="button" onClick={() => setShowRegisterPayment(true)} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-primary text-primary font-bold text-sm hover:bg-blue-50 transition-colors">
-                    <span className="material-symbols-outlined text-[18px]">add_circle</span> Registrar anticipo / pago
-                  </button>
+                  (() => {
+                    const balance = reservation.total - reservation.amountPaid;
+                    const isLiquidated = balance <= 0;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => !isLiquidated && setShowRegisterPayment(true)}
+                        disabled={isLiquidated}
+                        className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border font-bold text-sm transition-colors ${isLiquidated ? 'border-gray-200 text-gray-400 bg-gray-50 cursor-not-allowed' : 'border-primary text-primary hover:bg-blue-50'}`}
+                        title={isLiquidated ? 'El saldo ya está liquidado' : undefined}
+                      >
+                        <span className="material-symbols-outlined text-[18px]">{isLiquidated ? 'check_circle' : 'add_circle'}</span>
+                        {isLiquidated ? 'Saldo liquidado' : 'Registrar anticipo / pago'}
+                      </button>
+                    );
+                  })()
                 ) : (
                   <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 space-y-3">
                     <label className="block text-xs font-bold text-gray-700">Tipo de pago</label>
