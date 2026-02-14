@@ -84,6 +84,8 @@ const MEAL_PLAN_OPTIONS: { type: string; label: string }[] = [
   { type: 'todo_incluido', label: 'Todo incluido' },
 ];
 
+const TRAVEL_STYLE_OPTIONS = ['Romántico', 'Pareja', 'Amigos', 'Familiar'] as const;
+
 type MealPlanItem = { type: string; cost: number };
 
 type HotelForm = {
@@ -104,6 +106,8 @@ type HotelForm = {
   check_in_time: string;
   check_out_time: string;
   meal_plans: MealPlanItem[];
+  travel_styles: string[];
+  pet_friendly: boolean;
 };
 
 interface AdminHotelEditProps {
@@ -133,6 +137,8 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
     check_in_time: '15:00',
     check_out_time: '11:00',
     meal_plans: [],
+    travel_styles: [],
+    pet_friendly: false,
   });
   const isCreateMode = hotelId == null || hotelId === '';
   const idNum = hotelId ? Number(hotelId) : 0;
@@ -164,7 +170,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
     (async () => {
       const { data, error: err } = await supabase
         .from('hotels')
-        .select('id, name, location, municipality, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", check_in_time, check_out_time, meal_plans')
+        .select('id, name, location, municipality, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", check_in_time, check_out_time, meal_plans, travel_styles, pet_friendly')
         .eq('id', idNum)
         .single();
       if (err || !data) {
@@ -191,6 +197,8 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
           check_in_time: data.check_in_time || '15:00',
           check_out_time: data.check_out_time || '11:00',
           meal_plans: Array.isArray(data.meal_plans) ? data.meal_plans.map((m: { type?: string; cost?: number }) => ({ type: String(m?.type ?? ''), cost: Number(m?.cost ?? 0) })) : [],
+          travel_styles: Array.isArray(data.travel_styles) ? data.travel_styles : [],
+          pet_friendly: Boolean(data.pet_friendly),
         });
       }
       setLoading(false);
@@ -366,6 +374,8 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
         check_in_time: form.check_in_time.trim() || '15:00',
         check_out_time: form.check_out_time.trim() || '11:00',
         meal_plans: form.meal_plans,
+        travel_styles: form.travel_styles,
+        pet_friendly: form.pet_friendly,
       };
       if (isCreateMode) {
         const { error: err } = await supabase.from('hotels').insert(payload);
@@ -527,6 +537,36 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Descripción</label>
               <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm h-24 resize-none focus:ring-2 focus:ring-primary focus:border-primary" />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Estilo de Viaje</label>
+              <p className="text-xs text-gray-500 mb-2">Pueden seleccionar una o todas.</p>
+              <div className="flex flex-wrap gap-4">
+                {TRAVEL_STYLE_OPTIONS.map((style) => (
+                  <label key={style} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.travel_styles.includes(style)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setForm((f) => ({ ...f, travel_styles: [...f.travel_styles, style] }));
+                        } else {
+                          setForm((f) => ({ ...f, travel_styles: f.travel_styles.filter((s) => s !== style) }));
+                        }
+                      }}
+                      className="rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    <span className="text-sm font-medium text-gray-700">{style}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="pet_friendly" checked={form.pet_friendly} onChange={(e) => setForm((f) => ({ ...f, pet_friendly: e.target.checked }))} className="rounded border-gray-300 text-primary focus:ring-primary" />
+              <label htmlFor="pet_friendly" className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[18px] text-primary">pets</span>
+                Pet friendly
+              </label>
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Amenidades (separadas por coma)</label>

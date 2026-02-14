@@ -13,6 +13,8 @@ export interface Hotel {
   description: string;
   tags: string[];
   isSoldOut?: boolean;
+  pet_friendly?: boolean;
+  travel_styles?: string[];
 }
 
 export interface SearchParams {
@@ -27,6 +29,7 @@ export interface SearchParams {
   budgetMin: number;
   budgetMax: number;
   petFriendly?: boolean;
+  travelStyles?: string[];
 }
 
 export interface GuestDetails {

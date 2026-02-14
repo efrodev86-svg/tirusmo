@@ -21,8 +21,9 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
   
   const [budget, setBudget] = useState("");
   
-  // Travel Style State
-  const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
+  // Travel Style State (pueden seleccionar una o varias)
+  const TRAVEL_STYLE_OPTIONS = ['Romántico', 'Pareja', 'Amigos', 'Familiar'] as const;
+  const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
   const [petFriendly, setPetFriendly] = useState(false);
   
   const [destinations, setDestinations] = useState<string[]>([]);
@@ -146,7 +147,8 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
       },
       budgetMin: 0,
       budgetMax: budget ? parseInt(budget) : 10000,
-      petFriendly
+      petFriendly,
+      travelStyles: selectedStyles.length > 0 ? selectedStyles : undefined
     });
   };
 
@@ -278,22 +280,26 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
               <div className="flex flex-col gap-3">
                 <h3 className="text-xs font-bold text-gray-900 dark:text-white px-1">Busca por tu estilo de viaje</h3>
                 <div className="flex flex-wrap items-center gap-3">
-                {['Románticos', 'Pareja', 'Amigos', 'Familiares'].map((style, idx) => (
+                {TRAVEL_STYLE_OPTIONS.map((style, idx) => {
+                    const isSelected = selectedStyles.includes(style);
+                    return (
                     <button 
-                        key={idx} 
-                        onClick={() => setSelectedStyle(style === selectedStyle ? null : style)}
+                        key={style} 
+                        type="button"
+                        onClick={() => setSelectedStyles(prev => isSelected ? prev.filter(s => s !== style) : [...prev, style])}
                         className={`group flex h-9 shrink-0 items-center justify-center gap-x-2 rounded-full border pl-3 pr-5 transition-all shadow-sm ${
-                            selectedStyle === style 
+                            isSelected 
                             ? 'bg-primary border-primary text-white' 
                             : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-primary text-gray-700 dark:text-white'
                         }`}
                     >
-                        <span className={`material-symbols-outlined text-[18px] ${selectedStyle === style ? 'text-white' : 'text-gray-500 group-hover:text-primary'}`}>
-                            {idx === 0 ? 'favorite' : 'spa'}
+                        <span className={`material-symbols-outlined text-[18px] ${isSelected ? 'text-white' : 'text-gray-500 group-hover:text-primary'}`}>
+                            {idx === 0 ? 'favorite' : idx === 1 ? 'favorite' : idx === 2 ? 'group' : 'family_restroom'}
                         </span>
                         <span className="text-xs font-semibold">{style}</span>
                     </button>
-                ))}
+                    );
+                })}
                 </div>
                 <label className="flex items-center gap-2 cursor-pointer mt-1">
                   <input

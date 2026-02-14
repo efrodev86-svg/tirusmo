@@ -68,6 +68,8 @@ type HotelRow = {
   description: string | null;
   tags: string[] | null;
   isSoldOut?: boolean | null;
+  pet_friendly?: boolean | null;
+  travel_styles?: string[] | null;
 };
 
 function mapRowToHotel(row: HotelRow): Hotel {
@@ -86,6 +88,8 @@ function mapRowToHotel(row: HotelRow): Hotel {
     description: row.description ?? '',
     tags: Array.isArray(row.tags) ? row.tags : [],
     isSoldOut: Boolean(row.isSoldOut),
+    pet_friendly: Boolean(row.pet_friendly),
+    travel_styles: Array.isArray(row.travel_styles) ? row.travel_styles : [],
   };
 }
 
@@ -96,7 +100,7 @@ function mapRowToHotel(row: HotelRow): Hotel {
 export const getHotels = async (): Promise<Hotel[]> => {
   const { data, error } = await supabase
     .from('hotels')
-    .select('id, name, location, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut"')
+    .select('id, name, location, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", pet_friendly, travel_styles')
     .order('id', { ascending: true });
 
   if (error) {
@@ -115,7 +119,7 @@ export const getHotelById = async (id: number): Promise<Hotel | undefined> => {
 
   const { data, error } = await supabase
     .from('hotels')
-    .select('id, name, location, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut"')
+    .select('id, name, location, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", pet_friendly, travel_styles')
     .eq('id', id)
     .maybeSingle();
 

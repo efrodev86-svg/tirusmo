@@ -23,6 +23,8 @@ type HotelData = {
   check_in_time: string | null;
   check_out_time: string | null;
   meal_plans: MealPlanItem[];
+  travel_styles: string[];
+  pet_friendly: boolean;
 };
 
 type RoomSummary = { type: string; total: number; available: number; price: number };
@@ -62,7 +64,7 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
       try {
         const { data: hotelRow, error: hotelErr } = await supabase
           .from('hotels')
-          .select('id, name, location, municipality, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", partner_id, check_in_time, check_out_time, meal_plans')
+          .select('id, name, location, municipality, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", partner_id, check_in_time, check_out_time, meal_plans, travel_styles, pet_friendly')
           .eq('id', idNum)
           .single();
         if (hotelErr) throw hotelErr;
@@ -87,6 +89,8 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
           check_in_time: hotelRow.check_in_time ?? null,
           check_out_time: hotelRow.check_out_time ?? null,
           meal_plans: Array.isArray(hotelRow.meal_plans) ? hotelRow.meal_plans.map((m: { type?: string; cost?: number }) => ({ type: String(m?.type ?? ''), cost: Number(m?.cost ?? 0) })) : [],
+          travel_styles: Array.isArray(hotelRow.travel_styles) ? hotelRow.travel_styles : [],
+          pet_friendly: Boolean(hotelRow.pet_friendly),
         };
         setHotel(h);
 
@@ -240,6 +244,23 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
                 <span className="text-gray-300">/</span>
                 <span className="material-symbols-outlined text-[18px] text-primary">logout</span>
                 <span>{hotel.check_out_time || '11:00'}</span>
+              </div>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Estilo de Viaje</p>
+              <div className="flex flex-wrap gap-2">
+                {(hotel.travel_styles && hotel.travel_styles.length > 0)
+                  ? hotel.travel_styles.map((s, i) => (
+                      <span key={i} className="px-2 py-1 bg-primary/10 text-primary rounded text-[10px] font-bold">{s}</span>
+                    ))
+                  : <span className="text-gray-400 text-sm">—</span>}
+              </div>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Pet friendly</p>
+              <div className="flex items-center gap-2">
+                <span className={`material-symbols-outlined text-[20px] ${hotel.pet_friendly ? 'text-primary' : 'text-gray-400'}`}>pets</span>
+                <span className={`text-sm font-bold ${hotel.pet_friendly ? 'text-primary' : 'text-gray-500'}`}>{hotel.pet_friendly ? 'Sí' : 'No'}</span>
               </div>
             </div>
             <div>
