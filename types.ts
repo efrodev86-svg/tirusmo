@@ -26,6 +26,7 @@ export interface SearchParams {
   };
   budgetMin: number;
   budgetMax: number;
+  petFriendly?: boolean;
 }
 
 export interface GuestDetails {

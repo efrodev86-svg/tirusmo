@@ -44,7 +44,13 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
       // Budget check from initial search
       const matchesBudget = searchParams.budgetMax > 0 ? hotel.price <= searchParams.budgetMax : true;
 
-      return matchesLocation && matchesPrice && matchesStars && matchesAmenities && matchesBudget;
+      const petOk = !searchParams.petFriendly || (() => {
+        const a = (hotel.amenities || []).join(' ').toLowerCase();
+        const t = (hotel.tags || []).join(' ').toLowerCase();
+        return /pet|mascota|animal/.test(a) || /pet|mascota|animal/.test(t);
+      })();
+
+      return matchesLocation && matchesPrice && matchesStars && matchesAmenities && matchesBudget && petOk;
     });
   }, [hotels, searchParams, priceRange, selectedStars, selectedAmenities]);
 

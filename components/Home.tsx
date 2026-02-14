@@ -23,6 +23,7 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
   
   // Travel Style State
   const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
+  const [petFriendly, setPetFriendly] = useState(false);
   
   const [destinations, setDestinations] = useState<string[]>([]);
   const [filteredDestinations, setFilteredDestinations] = useState<string[]>([]);
@@ -144,7 +145,8 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
         rooms
       },
       budgetMin: 0,
-      budgetMax: budget ? parseInt(budget) : 10000
+      budgetMax: budget ? parseInt(budget) : 10000,
+      petFriendly
     });
   };
 
@@ -276,7 +278,7 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
               <div className="flex flex-col gap-3">
                 <h3 className="text-xs font-bold text-gray-900 dark:text-white px-1">Busca por tu estilo de viaje</h3>
                 <div className="flex flex-wrap items-center gap-3">
-                {['Románticos', 'Pareja', 'Amigos', 'Familiares', 'Wellness'].map((style, idx) => (
+                {['Románticos', 'Pareja', 'Amigos', 'Familiares'].map((style, idx) => (
                     <button 
                         key={idx} 
                         onClick={() => setSelectedStyle(style === selectedStyle ? null : style)}
@@ -293,17 +295,27 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
                     </button>
                 ))}
                 </div>
+                <label className="flex items-center gap-2 cursor-pointer mt-1">
+                  <input
+                    type="checkbox"
+                    checked={petFriendly}
+                    onChange={(e) => setPetFriendly(e.target.checked)}
+                    className="rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <span className={`material-symbols-outlined text-[20px] transition-colors ${petFriendly ? 'text-primary' : 'text-gray-600 dark:text-gray-400'}`}>pets</span>
+                  <span className={`text-xs font-medium transition-colors ${petFriendly ? 'text-primary' : 'text-gray-700 dark:text-gray-300'}`}>Hotel pet friendly</span>
+                </label>
               </div>
               <div className="flex flex-col gap-2 shrink-0 items-center text-center">
                 <p className="text-xs text-gray-900 dark:text-white px-1">
                   <span className="font-bold text-gray-900 dark:text-white">Presupuesto</span>
                   <span className="text-gray-500 dark:text-gray-400"> (Opcional)</span>
                 </p>
-                <label className="flex h-9 items-center gap-2 rounded-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 pl-3 pr-4 shadow-sm hover:border-primary transition-colors w-fit">
+                <label className="flex h-9 items-center gap-2 rounded-full border border-gray-200 dark:border-gray-500 bg-white dark:bg-gray-800 pl-3 pr-4 shadow-sm transition-colors w-fit focus-within:border-gray-300 dark:focus-within:border-gray-500">
                     <span className="material-symbols-outlined text-gray-500 text-[18px]">payments</span>
                     <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">$</span>
                     <input 
-                      className="w-24 bg-transparent text-xs font-semibold text-gray-900 dark:text-white focus:ring-0 focus:outline-none placeholder:text-gray-400 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      className="w-24 bg-transparent text-xs font-semibold text-gray-900 dark:text-white focus:ring-0 focus:outline-none border-none placeholder:text-gray-400 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       placeholder="0"
                       type="text"
                       inputMode="numeric"

@@ -115,7 +115,7 @@ export const GuestSelector: React.FC<GuestSelectorProps> = ({
           </button>
           <button 
             onClick={() => onApply(adults, children, rooms)}
-            className="bg-[#e91e63] hover:bg-[#d81b60] text-white font-bold py-2 px-6 rounded-lg transition-colors shadow-md"
+            className="bg-primary hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-lg transition-colors shadow-md"
           >
             Aplicar
           </button>
