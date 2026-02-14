@@ -79,14 +79,14 @@ async function geocodeAddress(address: string): Promise<{ lat: number; lng: numb
 
 const MEAL_PLAN_OPTIONS: { type: string; label: string }[] = [
   { type: 'desayuno', label: 'Desayuno' },
-  { type: 'comida', label: 'Comida' },
-  { type: 'cena', label: 'Cena' },
   { type: 'todo_incluido', label: 'Todo incluido' },
 ];
 
 const TRAVEL_STYLE_OPTIONS = ['Romántico', 'Pareja', 'Amigos', 'Familiar'] as const;
 
 type MealPlanItem = { type: string; cost: number };
+
+type PlanInclusionItem = { title: string; description: string };
 
 type HotelForm = {
   name: string;
@@ -108,6 +108,7 @@ type HotelForm = {
   meal_plans: MealPlanItem[];
   travel_styles: string[];
   pet_friendly: boolean;
+  plan_inclusions: PlanInclusionItem[];
 };
 
 interface AdminHotelEditProps {
@@ -139,6 +140,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
     meal_plans: [],
     travel_styles: [],
     pet_friendly: false,
+    plan_inclusions: [],
   });
   const isCreateMode = hotelId == null || hotelId === '';
   const idNum = hotelId ? Number(hotelId) : 0;
@@ -170,7 +172,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
     (async () => {
       const { data, error: err } = await supabase
         .from('hotels')
-        .select('id, name, location, municipality, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", check_in_time, check_out_time, meal_plans, travel_styles, pet_friendly')
+        .select('id, name, location, municipality, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", check_in_time, check_out_time, meal_plans, travel_styles, pet_friendly, plan_inclusions')
         .eq('id', idNum)
         .single();
       if (err || !data) {
@@ -199,6 +201,9 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
           meal_plans: Array.isArray(data.meal_plans) ? data.meal_plans.map((m: { type?: string; cost?: number }) => ({ type: String(m?.type ?? ''), cost: Number(m?.cost ?? 0) })) : [],
           travel_styles: Array.isArray(data.travel_styles) ? data.travel_styles : [],
           pet_friendly: Boolean(data.pet_friendly),
+          plan_inclusions: Array.isArray(data.plan_inclusions)
+            ? data.plan_inclusions.map((x: { title?: string; description?: string }) => ({ title: String(x?.title ?? ''), description: String(x?.description ?? '') }))
+            : [],
         });
       }
       setLoading(false);
@@ -376,6 +381,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
         meal_plans: form.meal_plans,
         travel_styles: form.travel_styles,
         pet_friendly: form.pet_friendly,
+        plan_inclusions: form.plan_inclusions,
       };
       if (isCreateMode) {
         const { error: err } = await supabase.from('hotels').insert(payload);
@@ -587,7 +593,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
               </div>
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Planes de comida</label>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Planes</label>
               <p className="text-xs text-gray-500 mb-2">Marca los que ofrece el hotel e indica el costo adicional por persona/noche (0 = incluido).</p>
               <div className="space-y-2">
                 {MEAL_PLAN_OPTIONS.map((opt) => {
@@ -631,6 +637,56 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
                 })}
               </div>
             </div>
+            {form.meal_plans.some((m) => m.type === 'todo_incluido') && (
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Qué incluye el plan Todo Incluido</label>
+                <p className="text-xs text-gray-500 mb-2">Define las inclusiones del plan Todo Incluido (ej. Habitaciones, Alimentos y Bebidas, Actividades). Se mostrarán en el detalle del hotel junto al plan.</p>
+                <div className="space-y-3">
+                  {(form.plan_inclusions || []).map((item, idx) => (
+                    <div key={idx} className="flex gap-2 items-start p-3 border border-gray-200 rounded-lg bg-gray-50/50">
+                      <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          value={item.title}
+                          onChange={(e) => setForm((f) => ({
+                            ...f,
+                            plan_inclusions: f.plan_inclusions.map((x, i) => i === idx ? { ...x, title: e.target.value } : x),
+                          }))}
+                          className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                          placeholder="Ej. Habitaciones"
+                        />
+                        <input
+                          type="text"
+                          value={item.description}
+                          onChange={(e) => setForm((f) => ({
+                            ...f,
+                            plan_inclusions: f.plan_inclusions.map((x, i) => i === idx ? { ...x, description: e.target.value } : x),
+                          }))}
+                          className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                          placeholder="Descripción de lo que incluye"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setForm((f) => ({ ...f, plan_inclusions: f.plan_inclusions.filter((_, i) => i !== idx) }))}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                        title="Quitar"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">delete</span>
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, plan_inclusions: [...f.plan_inclusions, { title: '', description: '' }] }))}
+                    className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-primary border border-primary rounded-lg hover:bg-primary/5"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">add</span>
+                    Agregar inclusión
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <input type="checkbox" id="isSoldOut" checked={form.isSoldOut} onChange={(e) => setForm((f) => ({ ...f, isSoldOut: e.target.checked }))} className="rounded border-gray-300 text-primary focus:ring-primary" />
               <label htmlFor="isSoldOut" className="text-sm font-medium text-gray-700">Agotado / Sin disponibilidad</label>

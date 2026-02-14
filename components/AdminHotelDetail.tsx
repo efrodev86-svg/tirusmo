@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase';
 
 type MealPlanItem = { type: string; cost: number };
 
+type PlanInclusionItem = { title: string; description: string };
+
 type HotelData = {
   id: number;
   name: string;
@@ -25,6 +27,7 @@ type HotelData = {
   meal_plans: MealPlanItem[];
   travel_styles: string[];
   pet_friendly: boolean;
+  plan_inclusions: PlanInclusionItem[];
 };
 
 type RoomSummary = { type: string; total: number; available: number; price: number };
@@ -47,6 +50,7 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
   const [savingPartner, setSavingPartner] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showPlanInclusionsModal, setShowPlanInclusionsModal] = useState(false);
 
   const idNum = Number(hotelId);
   const isIdValid = !Number.isNaN(idNum) && idNum > 0;
@@ -64,7 +68,7 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
       try {
         const { data: hotelRow, error: hotelErr } = await supabase
           .from('hotels')
-          .select('id, name, location, municipality, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", partner_id, check_in_time, check_out_time, meal_plans, travel_styles, pet_friendly')
+          .select('id, name, location, municipality, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", partner_id, check_in_time, check_out_time, meal_plans, travel_styles, pet_friendly, plan_inclusions')
           .eq('id', idNum)
           .single();
         if (hotelErr) throw hotelErr;
@@ -91,6 +95,9 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
           meal_plans: Array.isArray(hotelRow.meal_plans) ? hotelRow.meal_plans.map((m: { type?: string; cost?: number }) => ({ type: String(m?.type ?? ''), cost: Number(m?.cost ?? 0) })) : [],
           travel_styles: Array.isArray(hotelRow.travel_styles) ? hotelRow.travel_styles : [],
           pet_friendly: Boolean(hotelRow.pet_friendly),
+          plan_inclusions: Array.isArray(hotelRow.plan_inclusions)
+            ? hotelRow.plan_inclusions.map((x: { title?: string; description?: string }) => ({ title: String(x?.title ?? ''), description: String(x?.description ?? '') }))
+            : [],
         };
         setHotel(h);
 
@@ -278,18 +285,56 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
                 {hotel.isSoldOut ? 'Agotado' : 'Activo'}
               </span>
             </div>
-            {hotel.meal_plans && hotel.meal_plans.length > 0 && (
-              <div className="md:col-span-2">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Planes de comida</p>
-                <ul className="space-y-1">
-                  {hotel.meal_plans.map((m, i) => (
-                    <li key={i} className="flex items-center gap-2 text-sm text-gray-700">
-                      <span className="capitalize">{m.type.replace('_', ' ')}</span>
-                      <span className="text-gray-500">—</span>
-                      <span className="font-semibold text-[#111827]">{Number(m.cost) === 0 ? 'Incluido' : `$${Number(m.cost).toLocaleString('es-MX')} MXN`}</span>
-                    </li>
-                  ))}
-                </ul>
+            <div className="md:col-span-2">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Planes</p>
+                {hotel.meal_plans && hotel.meal_plans.length > 0 ? (
+                  <ul className="space-y-1">
+                    {hotel.meal_plans.map((m, i) => (
+                      <li key={i} className="flex items-center gap-2 text-sm text-gray-700 flex-wrap">
+                        <span className="capitalize">{m.type.replace('_', ' ')}</span>
+                        <span className="text-gray-500">—</span>
+                        <span className="font-semibold text-[#111827]">{Number(m.cost) === 0 ? 'Incluido' : `$${Number(m.cost).toLocaleString('es-MX')} MXN`}</span>
+                        {m.type === 'todo_incluido' && (
+                          <button
+                            type="button"
+                            onClick={() => setShowPlanInclusionsModal(true)}
+                            className="ml-1 flex items-center gap-1 px-2 py-0.5 text-xs font-bold text-primary hover:bg-primary/10 rounded transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">info</span>
+                            Qué incluye
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-gray-400 text-sm">Sin planes definidos.</p>
+                )}
+              </div>
+            {showPlanInclusionsModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowPlanInclusionsModal(false)}>
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-bold text-[#111827] dark:text-white">Detalle plan Todo Incluido</h3>
+                    <button type="button" onClick={() => setShowPlanInclusionsModal(false)} className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500">
+                      <span className="material-symbols-outlined">close</span>
+                    </button>
+                  </div>
+                  <div className="p-4 overflow-y-auto flex-1">
+                    {hotel.plan_inclusions && hotel.plan_inclusions.length > 0 ? (
+                      <ul className="space-y-4">
+                        {hotel.plan_inclusions.map((item, i) => (
+                          <li key={i}>
+                            <p className="font-bold text-[#111827] dark:text-white text-sm">{item.title}</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-300 mt-0.5">{item.description}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-gray-500 dark:text-gray-400 text-sm">Aún no se ha definido qué incluye el plan Todo Incluido. Usa &quot;Editar Información&quot; y en la sección Planes podrás agregar las inclusiones del Todo Incluido.</p>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
             <div className="md:col-span-2">
