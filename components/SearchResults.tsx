@@ -13,17 +13,67 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
   const [loading, setLoading] = useState(true);
 
   // Filters State
-  const [priceRange, setPriceRange] = useState<[number, number]>([100, 1500]);
-  const [selectedStars, setSelectedStars] = useState<number[]>([4, 5]);
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 2000]);
+  const [selectedStars, setSelectedStars] = useState<number[]>([]);
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
 
   useEffect(() => {
-    // Simulate fetching "real" data from DB
     getHotels().then(data => {
       setHotels(data);
       setLoading(false);
     });
   }, []);
+
+  const TAX_RATE = 0.16;
+  const nights = useMemo(() => {
+    if (!searchParams.checkIn || !searchParams.checkOut) return 1;
+    const [y1, m1, d1] = searchParams.checkIn.split('-').map(Number);
+    const [y2, m2, d2] = searchParams.checkOut.split('-').map(Number);
+    const start = new Date(y1, m1 - 1, d1);
+    const end = new Date(y2, m2 - 1, d2);
+    const diff = Math.max(0, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+    return diff || 1;
+  }, [searchParams.checkIn, searchParams.checkOut]);
+  const rooms = searchParams.guests?.rooms || 1;
+
+  // Hoteles que coinciden con todo excepto el rango de precio (para calcular min/max encontrado)
+  const hotelsWithoutPriceFilter = useMemo(() => {
+    return hotels.filter(hotel => {
+      const dest = searchParams.destination.toLowerCase().trim();
+      const stateCountry = [hotel.state, hotel.country].filter(Boolean).join(', ').toLowerCase();
+      const matchesLocation = dest === '' || hotel.location.toLowerCase().includes(dest) || dest.includes(hotel.location.toLowerCase()) || (stateCountry && (stateCountry.includes(dest) || dest.includes(stateCountry)));
+      const matchesStars = selectedStars.length === 0 || selectedStars.includes(hotel.stars);
+      const matchesAmenities = selectedAmenities.every(a => hotel.amenities.includes(a));
+      const subtotal = hotel.price * nights * rooms;
+      const totalWithTax = Math.round(subtotal * (1 + TAX_RATE));
+      const matchesBudget = searchParams.budgetMax <= 0 ? true : totalWithTax <= searchParams.budgetMax;
+      const petOk = !searchParams.petFriendly || hotel.pet_friendly === true || (() => {
+        const a = (hotel.amenities || []).join(' ').toLowerCase();
+        const t = (hotel.tags || []).join(' ').toLowerCase();
+        return /pet|mascota|animal/.test(a) || /pet|mascota|animal/.test(t);
+      })();
+      const travelStyles = searchParams.travelStyles ?? [];
+      const hotelStyles = hotel.travel_styles ?? [];
+      const matchesTravelStyles = travelStyles.length === 0 || travelStyles.some(s => hotelStyles.includes(s));
+      return matchesLocation && matchesStars && matchesAmenities && matchesBudget && petOk && matchesTravelStyles;
+    });
+  }, [hotels, searchParams, selectedStars, selectedAmenities, nights, rooms]);
+
+  // Precio menor y mayor encontrado en los resultados (sin aplicar filtro de precio)
+  const priceBounds = useMemo(() => {
+    if (hotelsWithoutPriceFilter.length === 0) return { min: 0, max: 2000 };
+    const prices = hotelsWithoutPriceFilter.map(h => h.price);
+    return { min: Math.min(...prices), max: Math.max(...prices) };
+  }, [hotelsWithoutPriceFilter]);
+
+  // Al cargar resultados, colocar el rango de precio en el menor y mayor encontrado
+  const hasInitializedPriceRange = React.useRef(false);
+  useEffect(() => {
+    if (!loading && hotels.length > 0 && !hasInitializedPriceRange.current) {
+      setPriceRange([priceBounds.min, priceBounds.max]);
+      hasInitializedPriceRange.current = true;
+    }
+  }, [loading, hotels.length, priceBounds.min, priceBounds.max]);
 
   // Filter Logic
   const filteredHotels = useMemo(() => {
@@ -41,8 +91,10 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
       
       const matchesAmenities = selectedAmenities.every(a => hotel.amenities.includes(a));
 
-      // Budget check from initial search
-      const matchesBudget = searchParams.budgetMax > 0 ? hotel.price <= searchParams.budgetMax : true;
+      // Presupuesto: total del viaje (precio × noches × habitaciones + impuestos) <= budgetMax
+      const subtotal = hotel.price * nights * rooms;
+      const totalWithTax = Math.round(subtotal * (1 + TAX_RATE));
+      const matchesBudget = searchParams.budgetMax <= 0 ? true : totalWithTax <= searchParams.budgetMax;
 
       const petOk = !searchParams.petFriendly || hotel.pet_friendly === true || (() => {
         const a = (hotel.amenities || []).join(' ').toLowerCase();
@@ -56,7 +108,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
 
       return matchesLocation && matchesPrice && matchesStars && matchesAmenities && matchesBudget && petOk && matchesTravelStyles;
     });
-  }, [hotels, searchParams, priceRange, selectedStars, selectedAmenities]);
+  }, [hotels, searchParams, priceRange, selectedStars, selectedAmenities, nights, rooms]);
 
   const toggleStar = (star: number) => {
     setSelectedStars(prev => prev.includes(star) ? prev.filter(s => s !== star) : [...prev, star]);
@@ -79,7 +131,9 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
         
         <div className="relative overflow-hidden rounded-xl h-[200px] md:h-[280px] w-full bg-cover bg-center" style={{backgroundImage: 'linear-gradient(0deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.2) 60%), url("https://lh3.googleusercontent.com/aida-public/AB6AXuCtSo5CfGdhGbw1LvYeuSAyuyyn7zv5qS_IkCRois1g5Zt15kiTNTeuwFlJp3ud66BodD4TUPPjZ89j3bvSiGJkgBbexpwoLw8U01v-s37QcrTtcjFbLip6i7-n2iV8wko3FZccj2WMaeBSNZ5HpvdCO2_CSqsMCvr3YGikdla8D0z90D0P5REGQPRSNWYfaaUEkj7i7yt5o7dPYIk7rZee7rtRwU-4OE-mPaUVVKCberh3_Mkueujj1JX9268KUpu4-ZDJDrLK5g")'}}>
           <div className="absolute inset-0 flex flex-col justify-center p-6 md:p-12">
-            <h1 className="text-white text-3xl md:text-5xl font-bold tracking-tight mb-4">Hoteles en {searchParams.destination || "México"}</h1>
+            <h1 className="text-white text-3xl md:text-5xl font-bold tracking-tight mb-4">
+              {searchParams.destination?.trim() ? `Hoteles en ${searchParams.destination}` : 'Hoteles para tu presupuesto'}
+            </h1>
             <p className="text-white/90 text-base md:text-lg font-medium flex items-center gap-2">
               <span className="material-symbols-outlined text-[22px]">calendar_month</span> {searchParams.checkIn} - {searchParams.checkOut} • {totalGuests} Huéspedes ({searchParams.guests.rooms} Hab.)
             </p>
@@ -94,27 +148,29 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
             <div className="bg-white dark:bg-[#1a2634] p-6 rounded-xl border border-[#e5e7eb] dark:border-gray-800 shadow-sm">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="font-bold text-lg dark:text-white">Filtros</h3>
-                <button className="text-xs font-semibold text-primary hover:underline" onClick={() => { setPriceRange([0, 2000]); setSelectedStars([]); setSelectedAmenities([]); }}>Limpiar todo</button>
+                <button className="text-xs font-semibold text-primary hover:underline" onClick={() => { setPriceRange([priceBounds.min, priceBounds.max]); setSelectedStars([]); setSelectedAmenities([]); }}>Limpiar todo</button>
               </div>
 
-              {/* Price Filter */}
+              {/* Price Filter: precio menor y mayor encontrado */}
               <div className="mb-8">
                 <p className="text-[#111418] dark:text-gray-200 text-sm font-semibold mb-4">Rango de Precio</p>
+                <p className="text-[10px] text-[#617289] dark:text-gray-400 mb-2">Encontrado: ${priceBounds.min.toLocaleString('es-MX')} – ${priceBounds.max.toLocaleString('es-MX')} MXN</p>
                 <div className="flex gap-2 mb-4">
                   <div className="flex-1">
-                    <label className="text-[10px] text-[#617289] dark:text-gray-400 uppercase font-bold mb-1 block">Min</label>
-                    <input className="w-full px-2 py-2 border border-[#dbe0e6] dark:border-gray-700 dark:bg-gray-800 rounded text-sm" type="number" value={priceRange[0]} onChange={(e) => setPriceRange([parseInt(e.target.value), priceRange[1]])}/>
+                    <label className="text-[10px] text-[#617289] dark:text-gray-400 uppercase font-bold mb-1 block">Mín</label>
+                    <input className="w-full px-2 py-2 border border-[#dbe0e6] dark:border-gray-700 dark:bg-gray-800 rounded text-sm" type="number" min={priceBounds.min} max={priceBounds.max} value={priceRange[0]} onChange={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v)) setPriceRange([Math.max(priceBounds.min, Math.min(v, priceRange[1])), priceRange[1]]); }}/>
                   </div>
                   <div className="flex-1">
-                    <label className="text-[10px] text-[#617289] dark:text-gray-400 uppercase font-bold mb-1 block">Max</label>
-                    <input className="w-full px-2 py-2 border border-[#dbe0e6] dark:border-gray-700 dark:bg-gray-800 rounded text-sm" type="number" value={priceRange[1]} onChange={(e) => setPriceRange([priceRange[0], parseInt(e.target.value)])}/>
+                    <label className="text-[10px] text-[#617289] dark:text-gray-400 uppercase font-bold mb-1 block">Máx</label>
+                    <input className="w-full px-2 py-2 border border-[#dbe0e6] dark:border-gray-700 dark:bg-gray-800 rounded text-sm" type="number" min={priceBounds.min} max={priceBounds.max} value={priceRange[1]} onChange={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v)) setPriceRange([priceRange[0], Math.min(priceBounds.max, Math.max(v, priceRange[0]))]); }}/>
                   </div>
                 </div>
                 <input 
                   type="range" 
-                  min="0" max="2000" 
+                  min={priceBounds.min} 
+                  max={priceBounds.max} 
                   value={priceRange[1]} 
-                  onChange={(e) => setPriceRange([priceRange[0], parseInt(e.target.value)])}
+                  onChange={(e) => setPriceRange([priceRange[0], Number(e.target.value)])}
                   className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                 />
               </div>
@@ -168,63 +224,85 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
             <h2 className="text-[#111418] dark:text-white text-2xl font-bold leading-tight">{filteredHotels.length} Hoteles encontrados</h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+          <div className="space-y-4">
             {loading ? (
-                <div className="col-span-full text-center py-20">Cargando hoteles...</div>
+                <div className="text-center py-20">Cargando hoteles...</div>
             ) : filteredHotels.length === 0 ? (
-                <div className="col-span-full text-center py-20 bg-white rounded-xl">No se encontraron hoteles con estos filtros.</div>
+                <div className="text-center py-20 bg-white dark:bg-[#1a2634] rounded-xl border border-[#f0f2f4] dark:border-gray-800">No se encontraron hoteles con estos filtros.</div>
             ) : (
-                filteredHotels.map(hotel => (
-                  <div key={hotel.id} className="group bg-white dark:bg-[#1a2634] rounded-2xl overflow-hidden border border-[#f0f2f4] dark:border-gray-800 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col h-full">
-                    <div className="relative h-56 overflow-hidden">
-                      {hotel.tags.includes('Wellness Choice') && (
-                        <div className="absolute top-4 left-4 z-10 bg-white/95 dark:bg-black/80 backdrop-blur-sm text-[10px] font-extrabold px-3 py-1.5 rounded-full shadow-md uppercase tracking-wider text-[#111418] dark:text-white flex items-center gap-1.5 border border-[#f0f2f4]/20">
-                            <span className="material-symbols-outlined text-[14px] text-primary filled">spa</span> Wellness Choice
-                        </div>
-                      )}
-                      {hotel.isSoldOut && (
-                         <div className="absolute inset-0 bg-black/40 z-20 flex items-center justify-center">
-                            <span className="bg-black/80 text-white px-5 py-1.5 rounded-lg text-sm font-bold border border-white/20 shadow-lg">Agotado</span>
-                         </div>
-                      )}
-                      <div className="h-full w-full bg-cover bg-center group-hover:scale-110 transition-transform duration-700" style={{backgroundImage: `url("${hotel.image}")`}}></div>
-                    </div>
-                    
-                    <div className={`p-5 flex flex-col flex-1 ${hotel.isSoldOut ? 'opacity-60' : ''}`}>
-                      <div className="mb-3">
-                        <h3 className="text-xl font-bold text-[#111418] dark:text-white leading-tight mb-1 group-hover:text-primary transition-colors">{hotel.name}</h3>
-                        <div className="flex items-center gap-1 text-sm text-[#617289]">
-                            <span className="material-symbols-outlined text-[16px]">location_on</span> {hotel.location}
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-2 mb-5">
-                        <div className="flex text-yellow-400 text-[16px]">
-                             {Array.from({length: 5}).map((_, i) => (
-                                <span key={i} className={`material-symbols-outlined ${i < hotel.stars ? 'filled' : ''}`} style={{fontSize: '16px'}}>star</span>
-                             ))}
-                        </div>
-                        <span className="text-xs font-bold bg-green-50 text-green-600 px-2 py-1 rounded-md border border-green-100">{hotel.rating} Exc</span>
+                filteredHotels.map(hotel => {
+                  const subtotal = hotel.price * nights * (searchParams.guests.rooms || 1);
+                  const taxes = Math.round(subtotal * TAX_RATE);
+                  const total = subtotal + taxes;
+                  const cityLabel = hotel.state && hotel.country ? [hotel.state, hotel.country].filter(Boolean).join(', ') : hotel.location;
+                  const features: string[] = [];
+                  if (hotel.pet_friendly) features.push('El hotel acepta mascotas.');
+                  if (hotel.amenities?.length) features.push(hotel.amenities[0] || '');
+                  if (!features.length) features.push('Alto estándar de limpieza');
+
+                  return (
+                    <div
+                      key={hotel.id}
+                      className={`group bg-white dark:bg-[#1a2634] rounded-xl overflow-hidden border border-[#e5e7eb] dark:border-gray-800 shadow-sm hover:shadow-md transition-shadow flex flex-col sm:flex-row ${hotel.isSoldOut ? 'opacity-75' : ''}`}
+                    >
+                      {/* Imagen: una sola, sin carrusel */}
+                      <div className="relative w-full sm:w-[42%] min-h-[220px] sm:min-h-[240px] flex-shrink-0">
+                        <button type="button" className="absolute top-3 left-3 z-10 w-9 h-9 rounded-full bg-white/90 dark:bg-black/60 flex items-center justify-center shadow-sm hover:bg-white text-gray-700 dark:text-gray-200" aria-label="Favoritos">
+                          <span className="material-symbols-outlined text-[20px]">favorite</span>
+                        </button>
+                        {hotel.isSoldOut && (
+                          <div className="absolute inset-0 bg-black/40 z-20 flex items-center justify-center">
+                            <span className="bg-black/80 text-white px-4 py-1.5 rounded-lg text-sm font-bold">Agotado</span>
+                          </div>
+                        )}
+                        <div className="h-full w-full bg-cover bg-center" style={{ backgroundImage: `url("${hotel.image}")` }} />
                       </div>
 
-                      <div className="mt-auto pt-5 border-t border-[#f0f2f4] dark:border-gray-800 flex items-center justify-between">
+                      {/* Datos del hotel: ubicación, nombre, estrellas, características */}
+                      <div className="flex-1 p-4 sm:p-5 flex flex-col justify-between min-w-0">
                         <div>
-                            <div className="flex items-baseline gap-1">
-                                <span className="text-2xl font-extrabold text-[#111418] dark:text-white">${hotel.price}</span>
-                                <span className="text-xs font-medium text-[#617289]">/noche</span>
-                            </div>
+                          <p className="text-sm text-[#617289] dark:text-gray-400 mb-0.5">{cityLabel}</p>
+                          <h3 className="text-lg sm:text-xl font-bold text-[#111418] dark:text-white leading-tight mb-2 group-hover:text-primary transition-colors">{hotel.name}</h3>
+                          <div className="flex text-yellow-400 text-[16px] mb-3">
+                            {Array.from({ length: 5 }).map((_, i) => (
+                              <span key={i} className={`material-symbols-outlined ${i < hotel.stars ? 'filled' : ''}`} style={{ fontSize: '16px' }}>star</span>
+                            ))}
+                          </div>
+                          <ul className="space-y-1">
+                            {features.slice(0, 2).map((text, i) => (
+                              text ? (
+                                <li key={i} className="flex items-center gap-2 text-sm text-[#111418] dark:text-gray-300">
+                                  <span className="material-symbols-outlined text-green-600 dark:text-green-500 text-[18px] flex-shrink-0">check_circle</span>
+                                  <span className="truncate">{text}</span>
+                                </li>
+                              ) : null
+                            ))}
+                          </ul>
                         </div>
-                        <button 
-                            disabled={hotel.isSoldOut}
-                            onClick={() => onSelectHotel(hotel)}
-                            className={`px-5 py-2.5 border-2 text-sm font-bold rounded-xl transition-all shadow-sm ${hotel.isSoldOut ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white border-primary text-primary hover:bg-primary hover:text-white'}`}
+                        <button
+                          disabled={hotel.isSoldOut}
+                          onClick={() => onSelectHotel(hotel)}
+                          className={`mt-4 self-start px-4 py-2 text-sm font-bold rounded-lg transition-colors ${hotel.isSoldOut ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-primary text-white hover:bg-blue-600'}`}
                         >
-                            {hotel.isSoldOut ? 'No disponible' : 'Ver Detalles'}
+                          Ver detalles
                         </button>
                       </div>
+
+                      {/* Precio: habitación por noche, impuestos, total */}
+                      <div className="w-full sm:w-[220px] flex-shrink-0 p-4 sm:p-5 border-t sm:border-t-0 sm:border-l border-[#e5e7eb] dark:border-gray-800 flex flex-col justify-center">
+                        <p className="text-xs text-[#617289] dark:text-gray-400 mb-2">Habitación por noche</p>
+                        <div className="flex items-baseline gap-2 mb-1">
+                          <span className="text-2xl sm:text-3xl font-bold text-[#111418] dark:text-white">${hotel.price.toLocaleString('es-MX')}</span>
+                          <span className="text-sm text-[#617289] dark:text-gray-400">MXN</span>
+                        </div>
+                        <p className="text-xs text-[#617289] dark:text-gray-400 mb-2">+ ${taxes.toLocaleString('es-MX')} de impuestos</p>
+                        <p className="text-sm font-bold text-[#111418] dark:text-white pt-2 border-t border-[#f0f2f4] dark:border-gray-700">
+                          Total ${total.toLocaleString('es-MX')} MXN
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
             )}
           </div>
         </div>

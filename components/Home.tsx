@@ -21,9 +21,12 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
   
   const [budget, setBudget] = useState("");
   
-  // Travel Style State (pueden seleccionar una o varias)
+  // Error de validación: falta destino o presupuesto
+  const [destBudgetError, setDestBudgetError] = useState(false);
+  
+  // Travel Style State (solo se puede seleccionar uno)
   const TRAVEL_STYLE_OPTIONS = ['Romántico', 'Pareja', 'Amigos', 'Familiar'] as const;
-  const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
+  const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
   const [petFriendly, setPetFriendly] = useState(false);
   
   const [destinations, setDestinations] = useState<string[]>([]);
@@ -66,6 +69,7 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
   const handleDestinationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setDestination(val);
+    setDestBudgetError(false);
     const list = getDestinationList();
     const filtered = val.length > 0
       ? list.filter((d) => d.toLowerCase().includes(val.toLowerCase()))
@@ -86,6 +90,7 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
   const handleDestinationSelect = (dest: string) => {
     setDestination(dest);
     setShowDestDropdown(false);
+    setDestBudgetError(false);
   };
 
   // Date Helpers
@@ -126,29 +131,30 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
   };
 
   const handleSearchClick = () => {
-    // Por defecto se exigen destino y fechas
-    if (!destination?.trim()) {
-      alert("Por favor indique el Destino.");
-      return;
-    }
     if (!checkIn || !checkOut) {
       alert("Por favor seleccione las fechas de Entrada y Salida.");
       return;
     }
 
+    const budgetNum = budget ? parseInt(String(budget).replace(/\D/g, ''), 10) : 0;
+    const hasDestination = !!destination?.trim();
+    const hasBudget = budgetNum > 0;
+    if (!hasDestination && !hasBudget) {
+      setDestBudgetError(true);
+      alert("Indique al menos destino o presupuesto para buscar.");
+      return;
+    }
+    setDestBudgetError(false);
+
     onSearch({
-      destination,
+      destination: destination?.trim() || '',
       checkIn,
       checkOut,
-      guests: {
-        adults,
-        children,
-        rooms
-      },
+      guests: { adults, children, rooms },
       budgetMin: 0,
-      budgetMax: budget ? parseInt(budget) : 10000,
+      budgetMax: budgetNum || 0,
       petFriendly,
-      travelStyles: selectedStyles.length > 0 ? selectedStyles : undefined
+      travelStyles: selectedStyle ? [selectedStyle] : undefined
     });
   };
 
@@ -174,11 +180,11 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
         </div>
 
         <div className="relative z-30 w-full max-w-5xl bg-white dark:bg-gray-800/90 backdrop-blur-sm rounded-3xl shadow-2xl p-4 md:p-6">
-          <div className="flex flex-col gap-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 items-center gap-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-2">
-              
-              {/* Destination Input with Autocomplete */}
-              <div className="flex-1 px-4 py-2 border-b md:border-b-0 md:border-r border-gray-100 dark:border-gray-700 relative" ref={destInputRef}>
+          <div className="flex flex-col gap-5">
+            {/* Fila 1: Destino y Presupuesto */}
+            <p className="text-sm font-bold text-primary px-1">Ingresa</p>
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 items-center">
+              <div className={`px-4 py-2 rounded-xl border relative border-b-2 ${destBudgetError ? 'border-red-500' : 'border-gray-100 dark:border-gray-700 border-b-primary'}`} ref={destInputRef}>
                 <label className="flex flex-col cursor-pointer group w-full">
                   <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1 group-hover:text-primary transition-colors">Destino</span>
                   <div className="flex items-center gap-2">
@@ -209,8 +215,33 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
                 )}
               </div>
 
-              {/* Dates Input */}
-              <div className="flex-1 px-4 py-2 border-b md:border-b-0 md:border-r border-gray-100 dark:border-gray-700 relative" ref={datePickerRef}>
+              <span className="text-sm font-bold text-primary justify-self-center">y/o</span>
+
+              <div className={`px-4 py-2 rounded-xl border border-b-2 ${destBudgetError ? 'border-red-500' : 'border-gray-100 dark:border-gray-700 border-b-primary'}`}>
+                <label className="flex flex-col cursor-pointer group w-full">
+                  <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1 group-hover:text-primary transition-colors">Presupuesto total</span>
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-gray-400 text-lg group-hover:text-primary">payments</span>
+                    <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">$</span>
+                    <input 
+                      className="w-full bg-transparent border-none p-0 text-sm font-semibold text-gray-900 dark:text-white focus:ring-0 placeholder:text-gray-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      placeholder="0"
+                      type="text"
+                      inputMode="numeric"
+                      value={budget ? Number(budget.replace(/\D/g, '') || 0).toLocaleString('es-MX') : ''}
+                      onChange={(e) => {
+                        setBudget(e.target.value.replace(/\D/g, ''));
+                        setDestBudgetError(false);
+                      }}
+                    />
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* Fila 2: Entrada-Salida, Huéspedes, Botón Buscar */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+              <div className="px-4 py-2 rounded-xl border border-gray-100 dark:border-gray-700 relative" ref={datePickerRef}>
                 <label 
                   className="flex flex-col cursor-pointer group w-full"
                   onClick={() => setShowDatePicker(!showDatePicker)}
@@ -219,25 +250,23 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
                   <div className="flex items-center gap-2 relative">
                     <span className="material-symbols-outlined text-gray-400 text-lg group-hover:text-primary">calendar_month</span>
                     <div className="flex-1 text-sm font-semibold text-gray-900 dark:text-white truncate">
-                        {checkIn ? `${formatDateDisplay(checkIn)} - ${formatDateDisplay(checkOut)}` : 'Agregar fechas'}
+                      {checkIn ? `${formatDateDisplay(checkIn)} - ${formatDateDisplay(checkOut)}` : 'Agregar fechas'}
                     </div>
                   </div>
                 </label>
-                
                 {showDatePicker && (
-                    <div className="absolute top-full left-0 md:left-auto md:right-auto md:-translate-x-1/4 mt-4 z-50 w-[300px] md:w-[650px]">
-                        <DateRangePicker 
-                            checkIn={parseDate(checkIn)}
-                            checkOut={parseDate(checkOut)}
-                            onChange={handleDateChange}
-                            onClose={() => setShowDatePicker(false)}
-                        />
-                    </div>
+                  <div className="absolute top-full left-0 mt-4 z-50 w-[300px] md:w-[650px]">
+                    <DateRangePicker 
+                      checkIn={parseDate(checkIn)}
+                      checkOut={parseDate(checkOut)}
+                      onChange={handleDateChange}
+                      onClose={() => setShowDatePicker(false)}
+                    />
+                  </div>
                 )}
               </div>
 
-              {/* Guests Input with Popover */}
-              <div className="flex-1 px-4 py-2 border-b md:border-b-0 md:border-r border-gray-100 dark:border-gray-700 relative" ref={guestSelectorRef}>
+              <div className="px-4 py-2 rounded-xl border border-gray-100 dark:border-gray-700 relative" ref={guestSelectorRef}>
                 <label 
                   className="flex flex-col cursor-pointer group w-full"
                   onClick={() => setShowGuestSelector(!showGuestSelector)}
@@ -246,13 +275,12 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-gray-400 text-lg group-hover:text-primary">group</span>
                     <div className="flex-1 text-sm font-semibold text-gray-900 dark:text-white truncate">
-                       {adults} adultos, {rooms} hab.
+                      {adults} adultos, {rooms} hab.
                     </div>
                   </div>
                 </label>
-
                 {showGuestSelector && (
-                  <div className="absolute top-full left-0 md:left-auto md:right-auto md:-translate-x-1/4 mt-4 z-50">
+                  <div className="absolute top-full left-0 mt-4 z-50">
                     <GuestSelector
                       initialAdults={adults}
                       initialChildren={children}
@@ -264,11 +292,10 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
                 )}
               </div>
 
-              {/* Search Button */}
-              <div className="flex items-center pl-4 pr-2">
+              <div className="flex items-center justify-center md:justify-end">
                 <button 
                   onClick={handleSearchClick}
-                  className="h-12 px-6 rounded-xl bg-primary text-white text-sm font-bold hover:bg-blue-600 transition-all shadow-lg hover:shadow-primary/30 flex items-center justify-center gap-2 shrink-0"
+                  className="h-12 px-8 rounded-xl bg-primary text-white text-sm font-bold hover:bg-blue-600 transition-all shadow-lg hover:shadow-primary/30 flex items-center justify-center gap-2 w-full md:w-auto"
                 >
                   <span className="material-symbols-outlined text-lg">search</span>
                   <span>Buscar</span>
@@ -276,63 +303,45 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-              <div className="flex flex-col gap-3">
-                <h3 className="text-xs font-bold text-gray-900 dark:text-white px-1">Busca por tu estilo de viaje</h3>
-                <div className="flex flex-wrap items-center gap-3">
+            {/* Fila 3: Estilo de viaje */}
+            <div className="flex flex-col gap-3">
+              <h3 className="text-xs font-bold text-gray-900 dark:text-white px-1">Busca por tu estilo de viaje</h3>
+              <div className="flex flex-wrap items-center gap-3">
                 {TRAVEL_STYLE_OPTIONS.map((style, idx) => {
-                    const isSelected = selectedStyles.includes(style);
-                    return (
+                  const isSelected = selectedStyle === style;
+                  return (
                     <button 
-                        key={style} 
-                        type="button"
-                        onClick={() => setSelectedStyles(prev => isSelected ? prev.filter(s => s !== style) : [...prev, style])}
-                        className={`group flex h-9 shrink-0 items-center justify-center gap-x-2 rounded-full border pl-3 pr-5 transition-all shadow-sm ${
-                            isSelected 
-                            ? 'bg-primary border-primary text-white' 
-                            : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-primary text-gray-700 dark:text-white'
-                        }`}
+                      key={style} 
+                      type="button"
+                      onClick={() => setSelectedStyle(isSelected ? null : style)}
+                      className={`group flex h-9 shrink-0 items-center justify-center gap-x-2 rounded-full border pl-3 pr-5 transition-all shadow-sm ${
+                        isSelected 
+                          ? 'bg-primary border-primary text-white' 
+                          : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-primary text-gray-700 dark:text-white'
+                      }`}
                     >
-                        <span className={`material-symbols-outlined text-[18px] ${isSelected ? 'text-white' : 'text-gray-500 group-hover:text-primary'}`}>
-                            {idx === 0 ? 'favorite' : idx === 1 ? 'favorite' : idx === 2 ? 'group' : 'family_restroom'}
-                        </span>
-                        <span className="text-xs font-semibold">{style}</span>
+                      <span className={`material-symbols-outlined text-[18px] ${isSelected ? 'text-white' : 'text-gray-500 group-hover:text-primary'}`}>
+                        {idx === 0 ? 'favorite' : idx === 1 ? 'favorite' : idx === 2 ? 'group' : 'family_restroom'}
+                      </span>
+                      <span className="text-xs font-semibold">{style}</span>
                     </button>
-                    );
+                  );
                 })}
-                </div>
-                <label className="flex items-center gap-2 cursor-pointer mt-1">
-                  <input
-                    type="checkbox"
-                    checked={petFriendly}
-                    onChange={(e) => setPetFriendly(e.target.checked)}
-                    className="rounded border-gray-300 text-primary focus:ring-primary"
-                  />
-                  <span className={`material-symbols-outlined text-[20px] transition-colors ${petFriendly ? 'text-primary' : 'text-gray-600 dark:text-gray-400'}`}>pets</span>
-                  <span className={`text-xs font-medium transition-colors ${petFriendly ? 'text-primary' : 'text-gray-700 dark:text-gray-300'}`}>Hotel pet friendly</span>
-                </label>
               </div>
-              <div className="flex flex-col gap-2 shrink-0 items-center text-center">
-                <p className="text-xs text-gray-900 dark:text-white px-1">
-                  <span className="font-bold text-gray-900 dark:text-white">Presupuesto</span>
-                  <span className="text-gray-500 dark:text-gray-400"> (Opcional)</span>
-                </p>
-                <label className="flex h-9 items-center gap-2 rounded-full border border-gray-200 dark:border-gray-500 bg-white dark:bg-gray-800 pl-3 pr-4 shadow-sm transition-colors w-fit focus-within:border-gray-300 dark:focus-within:border-gray-500">
-                    <span className="material-symbols-outlined text-gray-500 text-[18px]">payments</span>
-                    <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">$</span>
-                    <input 
-                      className="w-24 bg-transparent text-xs font-semibold text-gray-900 dark:text-white focus:ring-0 focus:outline-none border-none placeholder:text-gray-400 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      placeholder="0"
-                      type="text"
-                      inputMode="numeric"
-                      value={budget ? Number(budget.replace(/\D/g, '') || 0).toLocaleString('es-MX') : ''}
-                      onChange={(e) => {
-                        const raw = e.target.value.replace(/\D/g, '');
-                        setBudget(raw);
-                      }}
-                    />
-                </label>
-              </div>
+            </div>
+
+            {/* Fila 4: Hotel pet friendly */}
+            <div>
+              <label className="flex items-center gap-2 cursor-pointer w-fit">
+                <input
+                  type="checkbox"
+                  checked={petFriendly}
+                  onChange={(e) => setPetFriendly(e.target.checked)}
+                  className="rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                <span className={`material-symbols-outlined text-[20px] transition-colors ${petFriendly ? 'text-primary' : 'text-gray-600 dark:text-gray-400'}`}>pets</span>
+                <span className={`text-xs font-medium transition-colors ${petFriendly ? 'text-primary' : 'text-gray-700 dark:text-gray-300'}`}>Hotel pet friendly</span>
+              </label>
             </div>
           </div>
         </div>
