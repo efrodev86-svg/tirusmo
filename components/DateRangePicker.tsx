@@ -15,8 +15,11 @@ const MONTH_NAMES = [
 const DAYS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 
 export const DateRangePicker: React.FC<DateRangePickerProps> = ({ checkIn, checkOut, onChange, onClose }) => {
-  // Initialize view to checkIn month or current month
-  const [viewDate, setViewDate] = useState(checkIn || new Date());
+  // Mostrar mes actual y el siguiente
+  const [viewDate, setViewDate] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
   const [hoverDate, setHoverDate] = useState<Date | null>(null);
 
   const getDaysArray = (year: number, month: number) => {
@@ -47,14 +50,24 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ checkIn, check
     return d1.getDate() === d2.getDate() && d1.getMonth() === d2.getMonth() && d1.getFullYear() === d2.getFullYear();
   };
 
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
   const handleDateClick = (date: Date) => {
-    if (!checkIn || (checkIn && checkOut)) {
-      onChange(date, null);
-    } else if (checkIn && !checkOut) {
-      if (date < checkIn) {
-        onChange(date, null);
+    const day = startOfDay(date);
+    const start = checkIn ? startOfDay(checkIn) : null;
+    const end = checkOut ? startOfDay(checkOut) : null;
+
+    if (!start || (start && end)) {
+      onChange(day, null);
+    } else if (start && !end) {
+      if (day < start) {
+        onChange(day, null);
+      } else if (day.getTime() === start.getTime()) {
+        const nextDay = new Date(start);
+        nextDay.setDate(nextDay.getDate() + 1);
+        onChange(start, nextDay);
       } else {
-        onChange(checkIn, date);
+        onChange(start, day);
       }
     }
   };

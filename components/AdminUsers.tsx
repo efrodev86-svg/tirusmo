@@ -39,6 +39,7 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ onEditUser, refreshKey =
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [profileFilter, setProfileFilter] = useState<string>('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [createForm, setCreateForm] = useState({ email: '', password: DEFAULT_PASSWORD, full_name: '', user_type: 'cliente' as 'cliente' | 'partner' | 'admin' });
@@ -84,7 +85,7 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ onEditUser, refreshKey =
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search]);
+  }, [search, profileFilter]);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -176,13 +177,19 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ onEditUser, refreshKey =
     }
   };
 
-  const filtered = search.trim()
-    ? users.filter(
-        (u) =>
-          u.name.toLowerCase().includes(search.toLowerCase()) ||
-          u.email.toLowerCase().includes(search.toLowerCase())
-      )
-    : users;
+  const profileFilterToRole: Record<string, string> = {
+    admin: 'Admin',
+    cliente: 'Cliente',
+    partner: 'Partner',
+  };
+
+  const filtered = users.filter((u) => {
+    const matchesSearch = !search.trim() ||
+      u.name.toLowerCase().includes(search.toLowerCase()) ||
+      u.email.toLowerCase().includes(search.toLowerCase());
+    const matchesProfile = !profileFilter || u.role === profileFilterToRole[profileFilter];
+    return matchesSearch && matchesProfile;
+  });
 
   const totalFiltered = filtered.length;
   const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
@@ -210,9 +217,20 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ onEditUser, refreshKey =
         {/* Top Header */}
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <h1 className="text-2xl font-bold text-[#111827]">Gestión de Usuarios</h1>
-            <div className="flex items-center gap-4 w-full md:w-auto">
+            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                 {/* Filtro por perfil */}
+                <select
+                  value={profileFilter}
+                  onChange={(e) => setProfileFilter(e.target.value)}
+                  className="px-4 py-2.5 bg-gray-100 border-none rounded-full text-sm font-medium text-gray-600 outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                >
+                  <option value="">Todos los perfiles</option>
+                  <option value="admin">Admin</option>
+                  <option value="cliente">Usuario</option>
+                  <option value="partner">Partner</option>
+                </select>
                  {/* Search Bar */}
-                <div className="relative flex-1 md:w-80">
+                <div className="relative flex-1 min-w-[200px] md:w-80">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-gray-400 text-[20px]">search</span>
                     <input 
                         type="text" 

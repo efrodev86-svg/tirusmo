@@ -7,6 +7,9 @@ type HotelData = {
   id: number;
   name: string;
   location: string;
+  municipality: string | null;
+  state: string | null;
+  country: string | null;
   price: number;
   rating: number;
   reviews: number;
@@ -59,7 +62,7 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
       try {
         const { data: hotelRow, error: hotelErr } = await supabase
           .from('hotels')
-          .select('id, name, location, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", partner_id, check_in_time, check_out_time, meal_plans')
+          .select('id, name, location, municipality, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", partner_id, check_in_time, check_out_time, meal_plans')
           .eq('id', idNum)
           .single();
         if (hotelErr) throw hotelErr;
@@ -68,6 +71,9 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
           id: hotelRow.id,
           name: hotelRow.name,
           location: hotelRow.location,
+          municipality: hotelRow.municipality ?? null,
+          state: hotelRow.state ?? null,
+          country: hotelRow.country ?? null,
           price: Number(hotelRow.price),
           rating: Number(hotelRow.rating),
           reviews: Number(hotelRow.reviews) || 0,
@@ -218,6 +224,14 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
                 <p className="text-gray-600 text-sm">{hotel.location}</p>
               </div>
             </div>
+            {(hotel.municipality || hotel.state || hotel.country) && (
+              <div className="md:col-span-2">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Municipio / Estado / País</p>
+                <p className="text-gray-600 text-sm">
+                  {[hotel.municipality, hotel.state, hotel.country].filter(Boolean).join(', ') || '—'}
+                </p>
+              </div>
+            )}
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Check-in / Check-out</p>
               <div className="flex gap-2 items-center text-sm text-gray-600">

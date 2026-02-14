@@ -68,24 +68,19 @@ const App: React.FC = () => {
     budgetMax: 0
   });
   const [selectedHotel, setSelectedHotel] = useState<Hotel | null>(null);
+  const [hotelLoading, setHotelLoading] = useState(false);
   const fromPopState = useRef(false);
 
-  // Sincronizar vista con URL al cargar y al usar atrás/adelante
+  // Sincronizar vista con URL al cargar y al usar atrás/adelante (no cargar hotel aquí; se hace en el efecto siguiente)
   useEffect(() => {
     const hash = window.location.hash;
-    if (hash && hash.includes('type=recovery')) return; // lo maneja el efecto de recuperación
+    if (hash && hash.includes('type=recovery')) return;
     const pathname = window.location.pathname.replace(/\/$/, '') || '/';
     const viewFromPath = PATH_TO_VIEW[pathname];
     if (viewFromPath != null) {
       if (viewFromPath === ViewState.BOOKING) {
         const params = new URLSearchParams(window.location.search);
-        const hotelId = params.get('hotel');
-        if (hotelId) {
-          const hotel = getHotelById(Number(hotelId));
-          if (hotel) {
-            setSelectedHotel(hotel);
-          }
-        }
+        if (!params.get('hotel')) setSelectedHotel(null);
       }
       fromPopState.current = true;
       setView(viewFromPath);
@@ -99,11 +94,7 @@ const App: React.FC = () => {
       if (viewFromPath != null) {
         if (viewFromPath === ViewState.BOOKING) {
           const params = new URLSearchParams(window.location.search);
-          const hotelId = params.get('hotel');
-          if (hotelId) {
-            const hotel = getHotelById(Number(hotelId));
-            setSelectedHotel(hotel ?? null);
-          } else setSelectedHotel(null);
+          if (!params.get('hotel')) setSelectedHotel(null);
         }
         fromPopState.current = true;
         setView(viewFromPath);
@@ -112,6 +103,32 @@ const App: React.FC = () => {
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
+
+  // Cargar hotel por ID cuando estamos en Reserva y la URL tiene ?hotel= (ej. al recargar o abrir enlace)
+  useEffect(() => {
+    if (view !== ViewState.BOOKING) return;
+    const params = new URLSearchParams(window.location.search);
+    const hotelIdParam = params.get('hotel');
+    const hotelId = hotelIdParam ? Number(hotelIdParam) : 0;
+    if (!hotelId || Number.isNaN(hotelId)) {
+      setHotelLoading(false);
+      return;
+    }
+    if (selectedHotel?.id === hotelId) {
+      setHotelLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setHotelLoading(true);
+    setSelectedHotel(null);
+    getHotelById(hotelId).then((hotel) => {
+      if (!cancelled) {
+        setSelectedHotel(hotel ?? null);
+      }
+      if (!cancelled) setHotelLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [view, selectedHotel?.id]);
 
   // Actualizar URL cuando cambia la vista
   useEffect(() => {
@@ -135,13 +152,22 @@ const App: React.FC = () => {
     setView(ViewState.RESULTS);
   };
 
-  const handleSelectHotel = (hotelId: number) => {
-    const hotel = getHotelById(hotelId);
-    if (hotel) {
-      setSelectedHotel(hotel);
-      setView(ViewState.BOOKING);
-      window.scrollTo(0, 0);
-    }
+  const handleSelectHotel = (hotel: Hotel) => {
+    setSelectedHotel(hotel);
+    setView(ViewState.BOOKING);
+    window.scrollTo(0, 0);
+  };
+
+  const handleSelectFeatured = (hotelId: number) => {
+    setHotelLoading(true);
+    getHotelById(hotelId).then((hotel) => {
+      if (hotel) {
+        setSelectedHotel(hotel);
+        setView(ViewState.BOOKING);
+        window.scrollTo(0, 0);
+      }
+      setHotelLoading(false);
+    });
   };
 
   const handleBackToHome = () => {
@@ -354,7 +380,7 @@ const App: React.FC = () => {
         {view === ViewState.HOME && (
           <Home 
             onSearch={handleSearch} 
-            onSelectFeatured={handleSelectHotel} 
+            onSelectFeatured={handleSelectFeatured} 
           />
         )}
         
@@ -366,7 +392,22 @@ const App: React.FC = () => {
           />
         )}
 
-        {view === ViewState.BOOKING && selectedHotel && (
+        {view === ViewState.BOOKING && hotelLoading && (
+          <div className="flex-1 flex items-center justify-center py-20">
+            <p className="text-gray-500 dark:text-gray-400">Cargando hotel...</p>
+          </div>
+        )}
+
+        {view === ViewState.BOOKING && !hotelLoading && !selectedHotel && (
+          <div className="flex-1 flex flex-col items-center justify-center py-20 gap-4">
+            <p className="text-gray-600 dark:text-gray-400">Hotel no encontrado o enlace inválido.</p>
+            <button type="button" onClick={handleBackToHome} className="px-5 py-2.5 bg-primary text-white rounded-lg font-bold text-sm hover:bg-blue-600">
+              Volver al inicio
+            </button>
+          </div>
+        )}
+
+        {view === ViewState.BOOKING && !hotelLoading && selectedHotel && (
           <BookingWizard 
             hotel={selectedHotel} 
             searchParams={searchParams}

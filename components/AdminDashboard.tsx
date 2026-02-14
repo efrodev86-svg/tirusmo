@@ -13,7 +13,7 @@ interface AdminDashboardProps {
 }
 
 type AdminTab = 'dashboard' | 'reservations' | 'users' | 'hotels' | 'reports';
-type HotelViewState = 'list' | 'detail' | 'inventory' | 'edit';
+type HotelViewState = 'list' | 'detail' | 'inventory' | 'edit' | 'create';
 
 const DashboardHome = () => (
     <div className="animate-in fade-in zoom-in-95 duration-300">
@@ -357,6 +357,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             if (hotelViewState === 'edit' && selectedHotelId) {
                 return <AdminHotelEdit hotelId={selectedHotelId} onBack={() => setHotelViewState('detail')} />;
             }
+            if (hotelViewState === 'create') {
+                return (
+                    <AdminHotelEdit
+                        hotelId={null}
+                        onBack={() => setHotelViewState('list')}
+                        onSuccess={() => { setHotelViewState('list'); setHotelsRefreshKey((k) => k + 1); }}
+                    />
+                );
+            }
             if (hotelViewState === 'detail' && selectedHotelId) {
                 return (
                     <AdminHotelDetail 
@@ -367,7 +376,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     />
                 );
             }
-            return <AdminHotels onSelectHotel={handleSelectHotel} onManageRooms={handleManageHotelRooms} refreshKey={hotelsRefreshKey} />;
+            return <AdminHotels onSelectHotel={handleSelectHotel} onManageRooms={handleManageHotelRooms} onNavigateToCreate={() => setHotelViewState('create')} refreshKey={hotelsRefreshKey} />;
         case 'reports':
             return <div className="p-8 text-center text-gray-500">Reportes y Analíticas (Próximamente)</div>;
         default:

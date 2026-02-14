@@ -23,12 +23,14 @@ export type HotelRow = {
 interface AdminHotelsProps {
   onSelectHotel?: (id: string) => void;
   onManageRooms?: (hotelId: string) => void;
+  /** Navega a la página de registrar hotel (formulario completo como editar). */
+  onNavigateToCreate?: () => void;
   refreshKey?: number;
 }
 
 const PAGE_SIZES = [5, 10, 20, 50];
 
-export const AdminHotels: React.FC<AdminHotelsProps> = ({ onSelectHotel, onManageRooms, refreshKey = 0 }) => {
+export const AdminHotels: React.FC<AdminHotelsProps> = ({ onSelectHotel, onManageRooms, onNavigateToCreate, refreshKey = 0 }) => {
   const [hotels, setHotels] = useState<HotelRow[]>([]);
   const [roomCounts, setRoomCounts] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
@@ -38,9 +40,6 @@ export const AdminHotels: React.FC<AdminHotelsProps> = ({ onSelectHotel, onManag
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createSaving, setCreateSaving] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
 
   const fetchCount = async () => {
     let q = supabase.from('hotels').select('id', { count: 'exact', head: true });
@@ -115,7 +114,7 @@ export const AdminHotels: React.FC<AdminHotelsProps> = ({ onSelectHotel, onManag
           </select>
           <span className="text-sm text-gray-500">por página</span>
         </div>
-        <button type="button" onClick={() => { setShowCreateModal(true); setCreateError(null); }} className="bg-primary hover:bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-md shadow-blue-200 flex items-center gap-2">
+        <button type="button" onClick={() => onNavigateToCreate?.()} className="bg-primary hover:bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-md shadow-blue-200 flex items-center gap-2">
           <span className="material-symbols-outlined text-[20px]">add_circle</span>
           Registrar Hotel
         </button>
@@ -249,102 +248,6 @@ export const AdminHotels: React.FC<AdminHotelsProps> = ({ onSelectHotel, onManag
         </div>
       </div>
 
-      {showCreateModal && (
-        <CreateHotelModal onClose={() => { setShowCreateModal(false); setCreateError(null); }} onSuccess={() => { setShowCreateModal(false); fetchHotels(); }} saving={createSaving} error={createError} setSaving={setCreateSaving} setError={setCreateError} />
-      )}
     </div>
   );
 };
-
-const MEAL_PLAN_OPTIONS: { type: string; label: string }[] = [
-  { type: 'desayuno', label: 'Desayuno' },
-  { type: 'comida', label: 'Comida' },
-  { type: 'cena', label: 'Cena' },
-  { type: 'todo_incluido', label: 'Todo incluido' },
-];
-
-function CreateHotelModal({ onClose, onSuccess, saving, error, setSaving, setError }: { onClose: () => void; onSuccess: () => void; saving: boolean; error: string | null; setSaving: (v: boolean) => void; setError: (v: string | null) => void }) {
-  const [name, setName] = useState('');
-  const [location, setLocation] = useState('');
-  const [price, setPrice] = useState('');
-  const [rating, setRating] = useState('0');
-  const [reviews, setReviews] = useState('0');
-  const [image, setImage] = useState('');
-  const [stars, setStars] = useState(5);
-  const [description, setDescription] = useState('');
-  const [amenitiesText, setAmenitiesText] = useState('');
-  const [tagsText, setTagsText] = useState('');
-  const [isSoldOut, setIsSoldOut] = useState(false);
-  const [checkInTime, setCheckInTime] = useState('15:00');
-  const [checkOutTime, setCheckOutTime] = useState('11:00');
-  const [mealPlans, setMealPlans] = useState<Record<string, { offered: boolean; cost: number }>>(
-    Object.fromEntries(MEAL_PLAN_OPTIONS.map((o) => [o.type, { offered: false, cost: 0 }]))
-  );
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    const numPrice = parseFloat(price);
-    if (!name.trim() || !location.trim() || isNaN(numPrice) || numPrice < 0) { setError('Nombre, ubicación y precio son obligatorios.'); return; }
-    setSaving(true);
-    const amenities = amenitiesText.trim() ? amenitiesText.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : [];
-    const tags = tagsText.trim() ? tagsText.split(/[,;]/).map((s) => s.trim()).filter(Boolean) : [];
-    const meal_plans = MEAL_PLAN_OPTIONS.filter((o) => mealPlans[o.type]?.offered).map((o) => ({ type: o.type, cost: Number(mealPlans[o.type]?.cost) || 0 }));
-    const { error: err } = await supabase.from('hotels').insert({ name: name.trim(), location: location.trim(), price: numPrice, rating: parseFloat(rating) || 0, reviews: parseInt(reviews, 10) || 0, image: image.trim() || null, stars: Math.min(5, Math.max(0, stars)), description: description.trim() || null, amenities, tags, isSoldOut, check_in_time: checkInTime.trim() || '15:00', check_out_time: checkOutTime.trim() || '11:00', meal_plans });
-    setSaving(false);
-    if (err) { setError(err.message); return; }
-    onSuccess();
-  };
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={onClose} aria-hidden />
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[600px] relative z-10 max-h-[90vh] overflow-y-auto">
-        <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-          <h2 className="text-xl font-bold text-[#111827]">Registrar Hotel</h2>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600"><span className="material-symbols-outlined text-2xl">close</span></button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {error && <div className="bg-red-50 text-red-700 text-sm px-4 py-2 rounded-lg">{error}</div>}
-          <div><label className="text-xs font-bold text-gray-700">Nombre *</label><input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" required /></div>
-          <div><label className="text-xs font-bold text-gray-700">Ubicación *</label><input type="text" value={location} onChange={(e) => setLocation(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" required /></div>
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className="text-xs font-bold text-gray-700">Precio *</label><input type="number" min="0" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" required /></div>
-            <div><label className="text-xs font-bold text-gray-700">Estrellas (1-5)</label><select value={stars} onChange={(e) => setStars(Number(e.target.value))} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm">{[1,2,3,4,5].map((n) => <option key={n} value={n}>{n}</option>)}</select></div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className="text-xs font-bold text-gray-700">Check-in (hora)</label><input type="text" value={checkInTime} onChange={(e) => setCheckInTime(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" placeholder="15:00" /></div>
-            <div><label className="text-xs font-bold text-gray-700">Check-out (hora)</label><input type="text" value={checkOutTime} onChange={(e) => setCheckOutTime(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" placeholder="11:00" /></div>
-          </div>
-          <div>
-            <label className="text-xs font-bold text-gray-700 block mb-2">Planes de comida (opcional)</label>
-            <p className="text-[10px] text-gray-500 mb-2">Marca los que ofrece el hotel e indica el costo adicional por persona/noche (0 = incluido).</p>
-            <div className="space-y-2">
-              {MEAL_PLAN_OPTIONS.map((opt) => (
-                <div key={opt.type} className="flex items-center gap-3">
-                  <input type="checkbox" id={`meal-${opt.type}`} checked={mealPlans[opt.type]?.offered ?? false} onChange={(e) => setMealPlans((prev) => ({ ...prev, [opt.type]: { ...prev[opt.type], offered: e.target.checked } }))} className="rounded border-gray-300" />
-                  <label htmlFor={`meal-${opt.type}`} className="text-sm font-medium text-gray-700 min-w-[100px]">{opt.label}</label>
-                  <input type="number" min="0" step="0.01" value={mealPlans[opt.type]?.cost ?? 0} onChange={(e) => setMealPlans((prev) => ({ ...prev, [opt.type]: { ...prev[opt.type], cost: Number(e.target.value) || 0 } }))} className="w-24 px-2 py-1.5 border border-gray-200 rounded-lg text-sm" placeholder="Costo" />
-                  <span className="text-xs text-gray-400">MXN</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className="text-xs font-bold text-gray-700">Rating</label><input type="number" min="0" max="5" step="0.1" value={rating} onChange={(e) => setRating(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" /></div>
-            <div><label className="text-xs font-bold text-gray-700">Nº reviews</label><input type="number" min="0" value={reviews} onChange={(e) => setReviews(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" /></div>
-          </div>
-          <div><label className="text-xs font-bold text-gray-700">URL imagen</label><input type="url" value={image} onChange={(e) => setImage(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" placeholder="https://..." /></div>
-          <div><label className="text-xs font-bold text-gray-700">Descripción</label><textarea value={description} onChange={(e) => setDescription(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm h-20 resize-none" /></div>
-          <div><label className="text-xs font-bold text-gray-700">Amenidades (separadas por coma)</label><input type="text" value={amenitiesText} onChange={(e) => setAmenitiesText(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" placeholder="Wifi, Alberca, Spa" /></div>
-          <div><label className="text-xs font-bold text-gray-700">Tags (separados por coma)</label><input type="text" value={tagsText} onChange={(e) => setTagsText(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg text-sm" placeholder="playa, lujo" /></div>
-          <div className="flex items-center gap-2"><input type="checkbox" id="soldOut" checked={isSoldOut} onChange={(e) => setIsSoldOut(e.target.checked)} className="rounded border-gray-300" /><label htmlFor="soldOut" className="text-sm font-medium text-gray-700">Agotado</label></div>
-          <div className="flex justify-end gap-3 pt-4">
-            <button type="button" onClick={onClose} className="px-5 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
-            <button type="submit" disabled={saving} className="px-5 py-2.5 text-sm font-bold bg-primary text-white rounded-lg hover:bg-blue-600 disabled:opacity-50">{saving ? 'Guardando...' : 'Registrar'}</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}

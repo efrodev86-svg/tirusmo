@@ -4,7 +4,7 @@ import { getHotels } from '../services/hotelService';
 
 interface SearchResultsProps {
   searchParams: SearchParams;
-  onSelectHotel: (hotelId: number) => void;
+  onSelectHotel: (hotel: Hotel) => void;
   onBack: () => void;
 }
 
@@ -28,9 +28,12 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
   // Filter Logic
   const filteredHotels = useMemo(() => {
     return hotels.filter(hotel => {
-      const matchesLocation = hotel.location.toLowerCase().includes(searchParams.destination.toLowerCase()) || 
-                              searchParams.destination.toLowerCase().includes(hotel.location.toLowerCase()) ||
-                              searchParams.destination === ""; // If empty, show all (or could filter nothing)
+      const dest = searchParams.destination.toLowerCase().trim();
+      const stateCountry = [hotel.state, hotel.country].filter(Boolean).join(', ').toLowerCase();
+      const matchesLocation = dest === '' ||
+                              hotel.location.toLowerCase().includes(dest) ||
+                              dest.includes(hotel.location.toLowerCase()) ||
+                              (stateCountry && (stateCountry.includes(dest) || dest.includes(stateCountry)));
       
       const matchesPrice = hotel.price >= priceRange[0] && hotel.price <= priceRange[1];
       
@@ -41,9 +44,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
       // Budget check from initial search
       const matchesBudget = searchParams.budgetMax > 0 ? hotel.price <= searchParams.budgetMax : true;
 
-      return (matchesLocation || true) && matchesPrice && matchesStars && matchesAmenities && matchesBudget; 
-      // Note: "matchesLocation || true" is a hack for this demo because mock data locations might not perfectly match the autocomplete strings exactly. 
-      // In a real app, IDs would be used. For now, we trust the filter logic but fallback to show items if location is fuzzy.
+      return matchesLocation && matchesPrice && matchesStars && matchesAmenities && matchesBudget;
     });
   }, [hotels, searchParams, priceRange, selectedStars, selectedAmenities]);
 
@@ -205,7 +206,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
                         </div>
                         <button 
                             disabled={hotel.isSoldOut}
-                            onClick={() => onSelectHotel(hotel.id)}
+                            onClick={() => onSelectHotel(hotel)}
                             className={`px-5 py-2.5 border-2 text-sm font-bold rounded-xl transition-all shadow-sm ${hotel.isSoldOut ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white border-primary text-primary hover:bg-primary hover:text-white'}`}
                         >
                             {hotel.isSoldOut ? 'No disponible' : 'Ver Detalles'}

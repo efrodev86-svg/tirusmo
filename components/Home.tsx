@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SearchParams } from '../types';
-import { DESTINATIONS } from '../services/hotelService';
+import { getDestinations } from '../services/hotelService';
 import { DateRangePicker } from './DateRangePicker';
 import { GuestSelector } from './GuestSelector';
 
@@ -10,7 +10,7 @@ interface HomeProps {
 }
 
 const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
-  const [destination, setDestination] = useState("Cancún, México");
+  const [destination, setDestination] = useState("");
   const [checkIn, setCheckIn] = useState("2023-10-15");
   const [checkOut, setCheckOut] = useState("2023-10-19");
   
@@ -24,9 +24,14 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
   // Travel Style State
   const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
   
+  const [destinations, setDestinations] = useState<string[]>([]);
   const [filteredDestinations, setFilteredDestinations] = useState<string[]>([]);
   const [showDestDropdown, setShowDestDropdown] = useState(false);
   const destInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    getDestinations().then(setDestinations);
+  }, []);
 
   // DatePicker State
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -53,16 +58,27 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const getDestinationList = () =>
+    destinations.length ? destinations : ['Cancún, México', 'Puerto Vallarta, México', 'Los Cabos, México'];
+
   const handleDestinationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setDestination(val);
-    if (val.length > 0) {
-      const filtered = DESTINATIONS.filter(d => d.toLowerCase().includes(val.toLowerCase()));
-      setFilteredDestinations(filtered);
-      setShowDestDropdown(true);
-    } else {
-      setShowDestDropdown(false);
-    }
+    const list = getDestinationList();
+    const filtered = val.length > 0
+      ? list.filter((d) => d.toLowerCase().includes(val.toLowerCase()))
+      : list;
+    setFilteredDestinations(filtered);
+    setShowDestDropdown(true);
+  };
+
+  const handleDestinationFocus = () => {
+    const list = getDestinationList();
+    const filtered = destination.length > 0
+      ? list.filter((d) => d.toLowerCase().includes(destination.toLowerCase()))
+      : list;
+    setFilteredDestinations(filtered);
+    setShowDestDropdown(true);
   };
 
   const handleDestinationSelect = (dest: string) => {
@@ -93,7 +109,11 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
 
   const handleDateChange = (start: Date | null, end: Date | null) => {
     if (start) setCheckIn(formatDate(start));
-    if (end) setCheckOut(formatDate(end));
+    if (end) {
+      setCheckOut(formatDate(end));
+    } else {
+      setCheckOut('');
+    }
   };
 
   const handleGuestApply = (a: number, c: number, r: number) => {
@@ -104,12 +124,13 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
   };
 
   const handleSearchClick = () => {
-    // Validation Logic: (Dest & Dates & Guests) OR Budget must be filled
-    const basicFilled = destination && checkIn && checkOut;
-    const budgetFilled = budget && budget.length > 0;
-
-    if (!basicFilled && !budgetFilled) {
-      alert("Por favor complete el Destino y Fechas, O ingrese un Presupuesto.");
+    // Por defecto se exigen destino y fechas
+    if (!destination?.trim()) {
+      alert("Por favor indique el Destino.");
+      return;
+    }
+    if (!checkIn || !checkOut) {
+      alert("Por favor seleccione las fechas de Entrada y Salida.");
       return;
     }
 
@@ -161,10 +182,11 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
                     <input 
                       className="w-full bg-transparent border-none p-0 text-sm font-semibold text-gray-900 dark:text-white focus:ring-0 placeholder:text-gray-400" 
                       placeholder="¿A dónde vas?" 
-                      type="text" 
+                      type="text"
+                      autoComplete="off"
                       value={destination}
                       onChange={handleDestinationChange}
-                      onFocus={() => destination && handleDestinationChange({target: {value: destination}} as any)}
+                      onFocus={handleDestinationFocus}
                     />
                   </div>
                 </label>
@@ -238,21 +260,8 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
                 )}
               </div>
 
-              {/* Budget & Search Button */}
-              <div className="flex items-center gap-4 pl-4 pr-2">
-                <label className="flex-1 flex flex-col cursor-pointer group w-full">
-                  <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1 group-hover:text-primary transition-colors">Presupuesto (Max)</span>
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-gray-400 text-lg group-hover:text-primary">payments</span>
-                    <input 
-                        className="w-full bg-transparent border-none p-0 text-sm font-semibold text-gray-900 dark:text-white focus:ring-0 placeholder:text-gray-400" 
-                        placeholder="Opcional" 
-                        type="number" 
-                        value={budget}
-                        onChange={(e) => setBudget(e.target.value)}
-                    />
-                  </div>
-                </label>
+              {/* Search Button */}
+              <div className="flex items-center pl-4 pr-2">
                 <button 
                   onClick={handleSearchClick}
                   className="h-12 px-6 rounded-xl bg-primary text-white text-sm font-bold hover:bg-blue-600 transition-all shadow-lg hover:shadow-primary/30 flex items-center justify-center gap-2 shrink-0"
@@ -263,9 +272,10 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
               </div>
             </div>
 
-            <div className="flex flex-col gap-3">
-              <h3 className="text-xs font-bold text-gray-900 dark:text-white px-1">Busca por tu estilo de viaje</h3>
-              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+              <div className="flex flex-col gap-3">
+                <h3 className="text-xs font-bold text-gray-900 dark:text-white px-1">Busca por tu estilo de viaje</h3>
+                <div className="flex flex-wrap items-center gap-3">
                 {['Románticos', 'Pareja', 'Amigos', 'Familiares', 'Wellness'].map((style, idx) => (
                     <button 
                         key={idx} 
@@ -282,6 +292,28 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
                         <span className="text-xs font-semibold">{style}</span>
                     </button>
                 ))}
+                </div>
+              </div>
+              <div className="flex flex-col gap-2 shrink-0 items-center text-center">
+                <p className="text-xs text-gray-900 dark:text-white px-1">
+                  <span className="font-bold text-gray-900 dark:text-white">Presupuesto</span>
+                  <span className="text-gray-500 dark:text-gray-400"> (Opcional)</span>
+                </p>
+                <label className="flex h-9 items-center gap-2 rounded-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 pl-3 pr-4 shadow-sm hover:border-primary transition-colors w-fit">
+                    <span className="material-symbols-outlined text-gray-500 text-[18px]">payments</span>
+                    <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">$</span>
+                    <input 
+                      className="w-24 bg-transparent text-xs font-semibold text-gray-900 dark:text-white focus:ring-0 focus:outline-none placeholder:text-gray-400 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      placeholder="0"
+                      type="text"
+                      inputMode="numeric"
+                      value={budget ? Number(budget.replace(/\D/g, '') || 0).toLocaleString('es-MX') : ''}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/\D/g, '');
+                        setBudget(raw);
+                      }}
+                    />
+                </label>
               </div>
             </div>
           </div>

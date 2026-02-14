@@ -19,13 +19,31 @@ function loadGoogleMapsScript(): Promise<void> {
   });
 }
 
-async function reverseGeocode(lat: number, lon: number): Promise<string> {
+type ReverseGeocodeResult = { address: string; municipality: string; state: string; country: string };
+
+function parseAddressComponents(components: { long_name: string; types: string[] }[]): { municipality: string; state: string; country: string } {
+  let municipality = '';
+  let state = '';
+  let country = '';
+  for (const c of components || []) {
+    if (c.types?.includes('administrative_area_level_2')) municipality = c.long_name || municipality;
+    if (c.types?.includes('locality') && !municipality) municipality = c.long_name || municipality;
+    if (c.types?.includes('administrative_area_level_1')) state = c.long_name || state;
+    if (c.types?.includes('country')) country = c.long_name || country;
+  }
+  return { municipality, state, country };
+}
+
+async function reverseGeocode(lat: number, lon: number): Promise<ReverseGeocodeResult> {
   if (GOOGLE_MAPS_API_KEY) {
     try {
       const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=${GOOGLE_MAPS_API_KEY}`);
       const data = await res.json();
-      const addr = data?.results?.[0]?.formatted_address;
-      if (addr) return addr;
+      const first = data?.results?.[0];
+      if (first?.formatted_address) {
+        const { municipality, state, country } = parseAddressComponents(first.address_components || []);
+        return { address: first.formatted_address, municipality, state, country };
+      }
     } catch {
       // fallback to Nominatim
     }
@@ -34,7 +52,11 @@ async function reverseGeocode(lat: number, lon: number): Promise<string> {
     headers: { Accept: 'application/json' },
   });
   const data = await res.json();
-  return data?.display_name || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+  const displayName = data?.display_name || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+  const municipality = data?.address?.municipality ?? data?.address?.city ?? data?.address?.county ?? '';
+  const state = data?.address?.state ?? data?.address?.region ?? '';
+  const country = data?.address?.country ?? '';
+  return { address: displayName, municipality, state, country };
 }
 
 /** Geocodifica una dirección a coordenadas (para mostrar en el mapa). */
@@ -67,6 +89,9 @@ type MealPlanItem = { type: string; cost: number };
 type HotelForm = {
   name: string;
   location: string;
+  municipality: string;
+  state: string;
+  country: string;
   price: number;
   rating: number;
   reviews: number;
@@ -82,14 +107,20 @@ type HotelForm = {
 };
 
 interface AdminHotelEditProps {
-  hotelId: string;
+  /** Si es null, se muestra el formulario en modo "Registrar hotel" (insert). Si es string, modo "Editar" (update). */
+  hotelId: string | null;
   onBack: () => void;
+  /** Se llama tras guardar correctamente en modo creación (opcional). */
+  onSuccess?: () => void;
 }
 
-export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack }) => {
+export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack, onSuccess }) => {
   const [form, setForm] = useState<HotelForm>({
     name: '',
     location: '',
+    municipality: '',
+    state: '',
+    country: '',
     price: 0,
     rating: 0,
     reviews: 0,
@@ -103,7 +134,11 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
     check_out_time: '11:00',
     meal_plans: [],
   });
-  const [loading, setLoading] = useState(true);
+  const isCreateMode = hotelId == null || hotelId === '';
+  const idNum = hotelId ? Number(hotelId) : 0;
+  const validId = !isCreateMode && !Number.isNaN(idNum) && idNum > 0;
+
+  const [loading, setLoading] = useState(!isCreateMode);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [locationLoading, setLocationLoading] = useState(false);
@@ -115,10 +150,11 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
   const markerInstanceRef = useRef<unknown>(null);
   const didGeocodeInitialRef = useRef(false);
 
-  const idNum = Number(hotelId);
-  const validId = !Number.isNaN(idNum) && idNum > 0;
-
   useEffect(() => {
+    if (isCreateMode) {
+      setLoading(false);
+      return;
+    }
     if (!validId) {
       setLoading(false);
       setError('ID de hotel inválido');
@@ -128,7 +164,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
     (async () => {
       const { data, error: err } = await supabase
         .from('hotels')
-        .select('id, name, location, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", check_in_time, check_out_time, meal_plans')
+        .select('id, name, location, municipality, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", check_in_time, check_out_time, meal_plans')
         .eq('id', idNum)
         .single();
       if (err || !data) {
@@ -140,6 +176,9 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
         setForm({
           name: data.name || '',
           location: data.location || '',
+          municipality: data.municipality ?? '',
+          state: data.state ?? '',
+          country: data.country ?? '',
           price: Number(data.price) || 0,
           rating: Number(data.rating) || 0,
           reviews: Number(data.reviews) || 0,
@@ -157,7 +196,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [idNum, validId]);
+  }, [idNum, validId, isCreateMode]);
 
   // Geocodificar la ubicación inicial del hotel (solo una vez al cargar) para el mapa
   useEffect(() => {
@@ -190,6 +229,11 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
         autocomplete.addListener('place_changed', () => {
           const place = autocomplete.getPlace();
           if (place?.formatted_address) setForm((f) => ({ ...f, location: place.formatted_address! }));
+          const comps = (place as { address_components?: { long_name: string; types: string[] }[] })?.address_components;
+          if (comps?.length) {
+            const { municipality, state, country } = parseAddressComponents(comps);
+            setForm((f) => ({ ...f, municipality, state, country }));
+          }
           const loc = place?.geometry?.location;
           if (loc) setMapCenter({ lat: loc.lat(), lng: loc.lng() });
         });
@@ -208,6 +252,11 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
         autocomplete.addListener('place_changed', () => {
           const place = autocomplete.getPlace();
           if (place?.formatted_address) setForm((f) => ({ ...f, location: place.formatted_address! }));
+          const comps = (place as { address_components?: { long_name: string; types: string[] }[] })?.address_components;
+          if (comps?.length) {
+            const { municipality, state, country } = parseAddressComponents(comps);
+            setForm((f) => ({ ...f, municipality, state, country }));
+          }
           const loc = place?.geometry?.location;
           if (loc) setMapCenter({ lat: loc.lat(), lng: loc.lng() });
         });
@@ -217,12 +266,12 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
     return () => { cancelled = true; };
   }, [GOOGLE_MAPS_API_KEY, loading]);
 
-  // Actualizar dirección desde coordenadas (clic en mapa o arrastrar marcador)
+  // Actualizar dirección, estado y país desde coordenadas (clic en mapa o arrastrar marcador)
   const updateLocationFromCoords = React.useCallback(async (lat: number, lng: number) => {
     setMapCenter({ lat, lng });
     try {
-      const address = await reverseGeocode(lat, lng);
-      setForm((f) => ({ ...f, location: address }));
+      const { address, municipality, state, country } = await reverseGeocode(lat, lng);
+      setForm((f) => ({ ...f, location: address, municipality, state, country }));
     } catch {
       setForm((f) => ({ ...f, location: `${lat.toFixed(5)}, ${lng.toFixed(5)}` }));
     }
@@ -277,8 +326,8 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
         try {
           const { latitude, longitude } = position.coords;
           setMapCenter({ lat: latitude, lng: longitude });
-          const address = await reverseGeocode(latitude, longitude);
-          setForm((f) => ({ ...f, location: address }));
+          const { address, municipality, state, country } = await reverseGeocode(latitude, longitude);
+          setForm((f) => ({ ...f, location: address, municipality, state, country }));
         } catch (e) {
           setError('No se pudo obtener la dirección');
         } finally {
@@ -295,31 +344,39 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validId || !form.name.trim() || !form.location.trim()) return;
+    if (!form.name.trim() || !form.location.trim()) return;
     setSaving(true);
     setError(null);
     try {
-      const { error: err } = await supabase
-        .from('hotels')
-        .update({
-          name: form.name.trim(),
-          location: form.location.trim(),
-          price: form.price,
-          rating: form.rating,
-          reviews: form.reviews,
-          image: form.image.trim() || null,
-          amenities: form.amenities,
-          stars: form.stars,
-          description: form.description.trim() || null,
-          tags: form.tags,
-          isSoldOut: form.isSoldOut,
-          check_in_time: form.check_in_time.trim() || '15:00',
-          check_out_time: form.check_out_time.trim() || '11:00',
-          meal_plans: form.meal_plans,
-        })
-        .eq('id', idNum);
-      if (err) throw err;
-      onBack();
+      const payload = {
+        name: form.name.trim(),
+        location: form.location.trim(),
+        municipality: form.municipality.trim() || null,
+        state: form.state.trim() || null,
+        country: form.country.trim() || null,
+        price: form.price,
+        rating: form.rating,
+        reviews: form.reviews,
+        image: form.image.trim() || null,
+        amenities: form.amenities,
+        stars: form.stars,
+        description: form.description.trim() || null,
+        tags: form.tags,
+        isSoldOut: form.isSoldOut,
+        check_in_time: form.check_in_time.trim() || '15:00',
+        check_out_time: form.check_out_time.trim() || '11:00',
+        meal_plans: form.meal_plans,
+      };
+      if (isCreateMode) {
+        const { error: err } = await supabase.from('hotels').insert(payload);
+        if (err) throw err;
+        onSuccess?.();
+        onBack();
+      } else {
+        const { error: err } = await supabase.from('hotels').update(payload).eq('id', idNum);
+        if (err) throw err;
+        onBack();
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Error al guardar');
     } finally {
@@ -330,11 +387,19 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
   const amenitiesText = form.amenities.join(', ');
   const tagsText = form.tags.join(', ');
 
-  if (!validId || loading) {
+  if (!isCreateMode && !validId) {
     return (
       <div className="p-8">
-        {loading && <p className="text-gray-500">Cargando...</p>}
         {error && <p className="text-red-600">{error}</p>}
+        <button type="button" onClick={onBack} className="mt-4 px-4 py-2 bg-gray-100 rounded-lg text-sm font-bold text-gray-700">Volver</button>
+      </div>
+    );
+  }
+
+  if (!isCreateMode && loading) {
+    return (
+      <div className="p-8">
+        <p className="text-gray-500">Cargando...</p>
         <button type="button" onClick={onBack} className="mt-4 px-4 py-2 bg-gray-100 rounded-lg text-sm font-bold text-gray-700">Volver</button>
       </div>
     );
@@ -348,8 +413,8 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
             <span className="material-symbols-outlined text-[20px]">arrow_back</span>
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-[#111827] leading-tight">Editar información del hotel</h1>
-            <p className="text-xs text-gray-400 font-medium">ID: #{hotelId}</p>
+            <h1 className="text-2xl font-bold text-[#111827] leading-tight">{isCreateMode ? 'Registrar hotel' : 'Editar información del hotel'}</h1>
+            {!isCreateMode && <p className="text-xs text-gray-400 font-medium">ID: #{hotelId}</p>}
           </div>
         </div>
       </div>
@@ -418,6 +483,20 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
                   </div>
                 </div>
               )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Municipio</label>
+                <input type="text" value={form.municipality} onChange={(e) => setForm((f) => ({ ...f, municipality: e.target.value }))} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary" placeholder="Ej. Querétaro, Benito Juárez" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Estado</label>
+                <input type="text" value={form.state} onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary" placeholder="Ej. Querétaro, CDMX" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">País</label>
+                <input type="text" value={form.country} onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary" placeholder="Ej. México" />
+              </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
@@ -523,7 +602,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack 
               Cancelar
             </button>
             <button type="submit" disabled={saving} className="px-5 py-2.5 text-sm font-bold bg-primary text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 shadow-md shadow-blue-200">
-              {saving ? 'Guardando...' : 'Guardar cambios'}
+              {saving ? 'Guardando...' : isCreateMode ? 'Registrar hotel' : 'Guardar cambios'}
             </button>
           </div>
         </div>

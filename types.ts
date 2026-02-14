@@ -2,6 +2,8 @@ export interface Hotel {
   id: number;
   name: string;
   location: string;
+  state?: string | null;
+  country?: string | null;
   price: number;
   rating: number;
   reviews: number;
