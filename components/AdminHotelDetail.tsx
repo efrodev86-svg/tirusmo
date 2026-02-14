@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
-type MealPlanItem = { type: string; cost: number };
+type MealPlanItem = { type: string; cost: number; cost_children?: number };
 
 type PlanInclusionItem = { title: string; description: string };
 
@@ -92,7 +92,7 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
           partner_id: hotelRow.partner_id ? String(hotelRow.partner_id) : null,
           check_in_time: hotelRow.check_in_time ?? null,
           check_out_time: hotelRow.check_out_time ?? null,
-          meal_plans: Array.isArray(hotelRow.meal_plans) ? hotelRow.meal_plans.map((m: { type?: string; cost?: number }) => ({ type: String(m?.type ?? ''), cost: Number(m?.cost ?? 0) })) : [],
+          meal_plans: Array.isArray(hotelRow.meal_plans) ? hotelRow.meal_plans.map((m: { type?: string; cost?: number; cost_children?: number }) => ({ type: String(m?.type ?? ''), cost: Number(m?.cost ?? 0), cost_children: Number(m?.cost_children ?? 0) })) : [],
           travel_styles: Array.isArray(hotelRow.travel_styles) ? hotelRow.travel_styles : [],
           pet_friendly: Boolean(hotelRow.pet_friendly),
           plan_inclusions: Array.isArray(hotelRow.plan_inclusions)
@@ -293,7 +293,11 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
                       <li key={i} className="flex items-center gap-2 text-sm text-gray-700 flex-wrap">
                         <span className="capitalize">{m.type.replace('_', ' ')}</span>
                         <span className="text-gray-500">—</span>
-                        <span className="font-semibold text-[#111827]">{Number(m.cost) === 0 ? 'Incluido' : `$${Number(m.cost).toLocaleString('es-MX')} MXN`}</span>
+                        <span className="font-semibold text-[#111827]">
+                          Adultos: {Number(m.cost) === 0 ? 'Incluido' : `$${Number(m.cost).toLocaleString('es-MX')} MXN`}
+                          {' · '}
+                          Menores: {Number(m.cost_children ?? 0) === 0 ? 'Incluido' : `$${Number(m.cost_children).toLocaleString('es-MX')} MXN`}
+                        </span>
                         {m.type === 'todo_incluido' && (
                           <button
                             type="button"

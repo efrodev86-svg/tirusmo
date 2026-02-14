@@ -84,7 +84,7 @@ const MEAL_PLAN_OPTIONS: { type: string; label: string }[] = [
 
 const TRAVEL_STYLE_OPTIONS = ['Romántico', 'Pareja', 'Amigos', 'Familiar'] as const;
 
-type MealPlanItem = { type: string; cost: number };
+type MealPlanItem = { type: string; cost: number; cost_children?: number };
 
 type PlanInclusionItem = { title: string; description: string };
 
@@ -198,7 +198,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
           isSoldOut: Boolean(data.isSoldOut),
           check_in_time: data.check_in_time || '15:00',
           check_out_time: data.check_out_time || '11:00',
-          meal_plans: Array.isArray(data.meal_plans) ? data.meal_plans.map((m: { type?: string; cost?: number }) => ({ type: String(m?.type ?? ''), cost: Number(m?.cost ?? 0) })) : [],
+          meal_plans: Array.isArray(data.meal_plans) ? data.meal_plans.map((m: { type?: string; cost?: number; cost_children?: number }) => ({ type: String(m?.type ?? ''), cost: Number(m?.cost ?? 0), cost_children: Number(m?.cost_children ?? 0) })) : [],
           travel_styles: Array.isArray(data.travel_styles) ? data.travel_styles : [],
           pet_friendly: Boolean(data.pet_friendly),
           plan_inclusions: Array.isArray(data.plan_inclusions)
@@ -594,21 +594,22 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Planes</label>
-              <p className="text-xs text-gray-500 mb-2">Marca los que ofrece el hotel e indica el costo adicional por persona/noche (0 = incluido).</p>
-              <div className="space-y-2">
+              <p className="text-xs text-gray-500 mb-2">Marca los que ofrece el hotel e indica el costo por persona/noche (0 = incluido). Costo adultos y costo menores pueden ser distintos.</p>
+              <div className="space-y-3">
                 {MEAL_PLAN_OPTIONS.map((opt) => {
                   const current = form.meal_plans.find((m) => m.type === opt.type);
                   const offered = !!current;
                   const cost = current?.cost ?? 0;
+                  const costChildren = current?.cost_children ?? 0;
                   return (
-                    <div key={opt.type} className="flex items-center gap-3">
+                    <div key={opt.type} className="flex flex-wrap items-center gap-3 p-3 border border-gray-100 rounded-lg bg-gray-50/50">
                       <input
                         type="checkbox"
                         id={`meal-${opt.type}`}
                         checked={offered}
                         onChange={(e) => {
                           if (e.target.checked) {
-                            setForm((f) => ({ ...f, meal_plans: [...f.meal_plans.filter((m) => m.type !== opt.type), { type: opt.type, cost: 0 }] }));
+                            setForm((f) => ({ ...f, meal_plans: [...f.meal_plans.filter((m) => m.type !== opt.type), { type: opt.type, cost: 0, cost_children: 0 }] }));
                           } else {
                             setForm((f) => ({ ...f, meal_plans: f.meal_plans.filter((m) => m.type !== opt.type) }));
                           }
@@ -616,22 +617,44 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
                         className="rounded border-gray-300 text-primary focus:ring-primary"
                       />
                       <label htmlFor={`meal-${opt.type}`} className="text-sm font-medium text-gray-700 min-w-[100px]">{opt.label}</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={offered ? cost : ''}
-                        onChange={(e) => setForm((f) => ({
-                          ...f,
-                          meal_plans: f.meal_plans.some((m) => m.type === opt.type)
-                            ? f.meal_plans.map((m) => (m.type === opt.type ? { ...m, cost: Number(e.target.value) || 0 } : m))
-                            : [...f.meal_plans, { type: opt.type, cost: Number(e.target.value) || 0 }],
-                        }))}
-                        className="w-24 px-2 py-1.5 border border-gray-200 rounded-lg text-sm"
-                        placeholder="Costo"
-                        disabled={!offered}
-                      />
-                      <span className="text-xs text-gray-400">MXN</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">Adultos:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={offered ? cost : ''}
+                          onChange={(e) => setForm((f) => ({
+                            ...f,
+                            meal_plans: f.meal_plans.some((m) => m.type === opt.type)
+                              ? f.meal_plans.map((m) => (m.type === opt.type ? { ...m, cost: Number(e.target.value) || 0 } : m))
+                              : [...f.meal_plans, { type: opt.type, cost: Number(e.target.value) || 0, cost_children: 0 }],
+                          }))}
+                          className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-sm"
+                          placeholder="0"
+                          disabled={!offered}
+                        />
+                        <span className="text-xs text-gray-400">MXN</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">Menores:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={offered ? costChildren : ''}
+                          onChange={(e) => setForm((f) => ({
+                            ...f,
+                            meal_plans: f.meal_plans.some((m) => m.type === opt.type)
+                              ? f.meal_plans.map((m) => (m.type === opt.type ? { ...m, cost_children: Number(e.target.value) || 0 } : m))
+                              : [...f.meal_plans, { type: opt.type, cost: 0, cost_children: Number(e.target.value) || 0 }],
+                          }))}
+                          className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-sm"
+                          placeholder="0"
+                          disabled={!offered}
+                        />
+                        <span className="text-xs text-gray-400">MXN</span>
+                      </div>
                     </div>
                   );
                 })}
