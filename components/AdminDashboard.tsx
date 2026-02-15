@@ -7,13 +7,14 @@ import { AdminHotels } from './AdminHotels';
 import { AdminHotelDetail } from './AdminHotelDetail';
 import { AdminHotelEdit } from './AdminHotelEdit';
 import { AdminRoomInventory } from './AdminRoomInventory';
+import { AdminAmenities } from './AdminAmenities';
 
 interface AdminDashboardProps {
   onLogout: () => void;
 }
 
 type AdminTab = 'dashboard' | 'reservations' | 'users' | 'hotels' | 'reports';
-type HotelViewState = 'list' | 'detail' | 'inventory' | 'edit' | 'create';
+type HotelViewState = 'list' | 'detail' | 'inventory' | 'edit' | 'create' | 'amenities';
 
 const DashboardHome = () => (
     <div className="animate-in fade-in zoom-in-95 duration-300">
@@ -351,6 +352,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             }
             return <AdminUsers onEditUser={handleEditUser} refreshKey={usersRefreshKey} />;
         case 'hotels':
+            if (hotelViewState === 'amenities') {
+                return <AdminAmenities onBack={() => setHotelViewState('list')} />;
+            }
             if (hotelViewState === 'inventory' && selectedHotelId) {
                 return <AdminRoomInventory hotelId={selectedHotelId} onBack={() => setHotelViewState('detail')} />;
             }
@@ -376,7 +380,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     />
                 );
             }
-            return <AdminHotels onSelectHotel={handleSelectHotel} onManageRooms={handleManageHotelRooms} onNavigateToCreate={() => setHotelViewState('create')} refreshKey={hotelsRefreshKey} />;
+            return (
+              <AdminHotels
+                onSelectHotel={handleSelectHotel}
+                onManageRooms={handleManageHotelRooms}
+                onNavigateToCreate={() => setHotelViewState('create')}
+                onNavigateToAmenities={() => setHotelViewState('amenities')}
+                refreshKey={hotelsRefreshKey}
+              />
+            );
         case 'reports':
             return <div className="p-8 text-center text-gray-500">Reportes y Analíticas (Próximamente)</div>;
         default:

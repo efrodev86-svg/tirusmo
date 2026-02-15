@@ -84,6 +84,20 @@ const MEAL_PLAN_OPTIONS: { type: string; label: string }[] = [
 
 const TRAVEL_STYLE_OPTIONS = ['Romántico', 'Pareja', 'Amigos', 'Familiar'] as const;
 
+const AMENITY_CATEGORY_LABELS: Record<string, string> = {
+  conectividad: 'Conectividad',
+  alberca_wellness: 'Alberca y bienestar',
+  comida_bebida: 'Comida y bebida',
+  habitacion: 'Habitación',
+  servicios: 'Servicios',
+  familia_mascotas: 'Familia y mascotas',
+  deportes: 'Deportes',
+  accesibilidad: 'Accesibilidad',
+  general: 'General',
+};
+
+type AmenityCatalogItem = { id: number; slug: string; label: string; category: string; sort_order: number };
+
 type MealPlanItem = { type: string; cost: number; cost_children?: number };
 
 type PlanInclusionItem = { title: string; description: string };
@@ -150,15 +164,50 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
 
   const [loading, setLoading] = useState(!isCreateMode);
   const [saving, setSaving] = useState(false);
+  /** true = hotel no ofrece planes de alimentos (meal_plans vacío) */
+  const [sinPlanAlimentos, setSinPlanAlimentos] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [locationLoading, setLocationLoading] = useState(false);
   const [autocompleteReady, setAutocompleteReady] = useState(false);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [amenityCatalog, setAmenityCatalog] = useState<AmenityCatalogItem[]>([]);
   const locationInputRef = useRef<HTMLInputElement>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<unknown>(null);
   const markerInstanceRef = useRef<unknown>(null);
   const didGeocodeInitialRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('amenity_catalog')
+      .select('id, slug, label, category, sort_order')
+      .order('category')
+      .order('sort_order')
+      .then(({ data, error }) => {
+        if (!cancelled && !error && data) setAmenityCatalog(data as AmenityCatalogItem[]);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const amenitiesNormalizedRef = useRef(false);
+  useEffect(() => {
+    if (isCreateMode || amenityCatalog.length === 0 || amenitiesNormalizedRef.current) return;
+    amenitiesNormalizedRef.current = true;
+    setForm((f) => ({
+      ...f,
+      amenities: f.amenities
+        .map((a) => {
+          const s = String(a).trim();
+          const bySlug = amenityCatalog.find((c) => c.slug === s);
+          if (bySlug) return bySlug.slug;
+          const byLabel = amenityCatalog.find((c) => c.label === s);
+          if (byLabel) return byLabel.slug;
+          return null;
+        })
+        .filter((x): x is string => x != null),
+    }));
+  }, [isCreateMode, amenityCatalog]);
 
   useEffect(() => {
     if (isCreateMode) {
@@ -201,13 +250,17 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
           isSoldOut: Boolean(data.isSoldOut),
           check_in_time: data.check_in_time || '15:00',
           check_out_time: data.check_out_time || '11:00',
-          meal_plans: Array.isArray(data.meal_plans) ? data.meal_plans.map((m: { type?: string; cost?: number; cost_children?: number }) => ({ type: String(m?.type ?? ''), cost: Number(m?.cost ?? 0), cost_children: Number(m?.cost_children ?? 0) })) : [],
+          meal_plans: Array.isArray(data.meal_plans) ? data.meal_plans.filter((m: { type?: string }) => m?.type === 'desayuno' || m?.type === 'todo_incluido').map((m: { type?: string; cost?: number; cost_children?: number }) => ({ type: String(m?.type ?? ''), cost: Number(m?.cost ?? 0), cost_children: Number(m?.cost_children ?? 0) })) : [],
           travel_styles: Array.isArray(data.travel_styles) ? data.travel_styles : [],
           pet_friendly: Boolean(data.pet_friendly),
           plan_inclusions: Array.isArray(data.plan_inclusions)
             ? data.plan_inclusions.map((x: { title?: string; description?: string }) => ({ title: String(x?.title ?? ''), description: String(x?.description ?? '') }))
             : [],
         });
+          setSinPlanAlimentos(
+          !Array.isArray(data.meal_plans) ||
+          data.meal_plans.filter((m: { type?: string }) => m?.type === 'desayuno' || m?.type === 'todo_incluido').length === 0
+        );
       }
       setLoading(false);
     })();
@@ -404,8 +457,19 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
     }
   };
 
-  const amenitiesText = form.amenities.join(', ');
   const tagsText = form.tags.join(', ');
+  const amenityByCategory = amenityCatalog.reduce<Record<string, AmenityCatalogItem[]>>((acc, a) => {
+    (acc[a.category] ??= []).push(a);
+    return acc;
+  }, {});
+  const amenityCategories = [...new Set(amenityCatalog.map((a) => a.category))].sort();
+  const toggleAmenity = (slug: string) => {
+    setForm((f) =>
+      f.amenities.includes(slug)
+        ? { ...f, amenities: f.amenities.filter((x) => x !== slug) }
+        : { ...f, amenities: [...f.amenities, slug] }
+    );
+  };
 
   if (!isCreateMode && !validId) {
     return (
@@ -583,8 +647,39 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
               </label>
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Amenidades (separadas por coma)</label>
-              <input type="text" value={amenitiesText} onChange={(e) => setForm((f) => ({ ...f, amenities: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) }))} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm" placeholder="Wifi, Alberca, Spa" />
+              <label className="block text-sm font-bold text-gray-700 mb-1">Amenidades</label>
+              <p className="text-xs text-gray-500 mb-3">Selecciona de la lista del catálogo. Gestiona el catálogo en Hoteles → Amenidades.</p>
+              {amenityCatalog.length === 0 ? (
+                <p className="text-sm text-gray-500 py-2">Cargando catálogo...</p>
+              ) : (
+                <div className="space-y-4">
+                  {amenityCategories.map((cat) => (
+                    <div key={cat} className="border border-gray-100 rounded-lg p-3 bg-gray-50/50">
+                      <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{AMENITY_CATEGORY_LABELS[cat] ?? cat}</span>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {(amenityByCategory[cat] ?? []).sort((a, b) => a.sort_order - b.sort_order).map((a) => (
+                          <label
+                            key={a.id}
+                            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer transition-colors ${
+                              form.amenities.includes(a.slug)
+                                ? 'border-primary bg-blue-50 text-primary'
+                                : 'border-gray-200 bg-white hover:border-primary/50 hover:bg-blue-50/50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={form.amenities.includes(a.slug)}
+                              onChange={() => toggleAmenity(a.slug)}
+                              className="rounded border-gray-300 text-primary focus:ring-primary"
+                            />
+                            <span className="text-sm font-medium">{a.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Tags (separados por coma)</label>
@@ -604,7 +699,26 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
               <label className="block text-sm font-bold text-gray-700 mb-1">Planes</label>
               <p className="text-xs text-gray-500 mb-2">Marca los que ofrece el hotel e indica el costo por persona/noche (0 = incluido). Costo adultos y costo menores pueden ser distintos.</p>
               <div className="space-y-3">
-                {MEAL_PLAN_OPTIONS.map((opt) => {
+                {/* Sin plan de alimentos: si está marcado, el hotel NO ofrece planes de comida (meal_plans = []) */}
+                <div className="flex items-center gap-3 p-3 border border-gray-100 rounded-lg bg-gray-50/50">
+                  <input
+                    type="checkbox"
+                    id="meal-sin_plan"
+                    checked={sinPlanAlimentos}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSinPlanAlimentos(true);
+                        setForm((f) => ({ ...f, meal_plans: [] }));
+                      } else {
+                        setSinPlanAlimentos(false);
+                      }
+                    }}
+                    className="rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <label htmlFor="meal-sin_plan" className="text-sm font-medium text-gray-700">Sin plan de alimentos (no ofrece este servicio)</label>
+                </div>
+                {/* Desayuno y Todo incluido: solo se muestran si el hotel SÍ ofrece planes */}
+                {!sinPlanAlimentos && MEAL_PLAN_OPTIONS.map((opt) => {
                   const current = form.meal_plans.find((m) => m.type === opt.type);
                   const offered = !!current;
                   const cost = current?.cost ?? 0;

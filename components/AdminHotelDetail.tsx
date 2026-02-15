@@ -51,9 +51,22 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showPlanInclusionsModal, setShowPlanInclusionsModal] = useState(false);
+  const [amenityLabels, setAmenityLabels] = useState<Record<string, string>>({});
 
   const idNum = Number(hotelId);
   const isIdValid = !Number.isNaN(idNum) && idNum > 0;
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase.from('amenity_catalog').select('slug, label').then(({ data }) => {
+      if (!cancelled && data) {
+        const map: Record<string, string> = {};
+        data.forEach((r: { slug: string; label: string }) => { map[r.slug] = r.label; });
+        setAmenityLabels(map);
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!isIdValid) {
@@ -273,8 +286,10 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Amenidades</p>
               <div className="flex flex-wrap gap-2">
-                {(hotel.amenities || []).map((s, i) => (
-                  <span key={i} className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-[10px] font-bold uppercase">{s}</span>
+                {(hotel.amenities || []).map((slug, i) => (
+                  <span key={i} className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs font-bold">
+                    {amenityLabels[slug] ?? slug}
+                  </span>
                 ))}
                 {(!hotel.amenities || hotel.amenities.length === 0) && <span className="text-gray-400 text-sm">—</span>}
               </div>
@@ -312,7 +327,7 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-gray-400 text-sm">Sin planes definidos.</p>
+                  <p className="text-gray-400 text-sm">Sin planes de alimentos</p>
                 )}
               </div>
             {showPlanInclusionsModal && (

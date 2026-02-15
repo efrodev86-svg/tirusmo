@@ -1,3 +1,9 @@
+export interface MealPlanItem {
+  type: string;
+  cost: number;
+  cost_children?: number;
+}
+
 export interface Hotel {
   id: number;
   name: string;
@@ -15,6 +21,7 @@ export interface Hotel {
   isSoldOut?: boolean;
   pet_friendly?: boolean;
   travel_styles?: string[];
+  meal_plans?: MealPlanItem[];
 }
 
 export interface SearchParams {

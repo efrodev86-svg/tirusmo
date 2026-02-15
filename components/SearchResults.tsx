@@ -1,6 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { SearchParams, Hotel } from '../types';
 import { getHotels } from '../services/hotelService';
+import { supabase } from '../lib/supabase';
+
+type AmenityItem = { slug: string; label: string; category: string; sort_order: number };
+
+const AMENITY_CATEGORY_LABELS: Record<string, string> = {
+  conectividad: 'Conectividad',
+  alberca_wellness: 'Alberca y bienestar',
+  comida_bebida: 'Comida y bebida',
+  habitacion: 'Habitación',
+  servicios: 'Servicios',
+  familia_mascotas: 'Familia y mascotas',
+  deportes: 'Deportes',
+  accesibilidad: 'Accesibilidad',
+  general: 'General',
+};
 
 interface SearchResultsProps {
   searchParams: SearchParams;
@@ -16,12 +31,33 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 2000]);
   const [selectedStars, setSelectedStars] = useState<number[]>([]);
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
+  const [selectedPlans, setSelectedPlans] = useState<string[]>([]);
+  const [selectedPetFriendly, setSelectedPetFriendly] = useState(searchParams.petFriendly ?? false);
+  const [amenityCatalog, setAmenityCatalog] = useState<AmenityItem[]>([]);
+  const [expandedAmenityCategories, setExpandedAmenityCategories] = useState<Set<string>>(new Set());
+
+  const PLAN_OPTIONS = [
+    { value: 'desayuno', label: 'Desayuno' },
+    { value: 'todo_incluido', label: 'Todo incluido' },
+    { value: 'sin_plan', label: 'Sin plan de alimentos' },
+  ] as const;
 
   useEffect(() => {
     getHotels().then(data => {
       setHotels(data);
       setLoading(false);
     });
+  }, []);
+
+  useEffect(() => {
+    supabase
+      .from('amenity_catalog')
+      .select('slug, label, category, sort_order')
+      .order('category')
+      .order('sort_order')
+      .then(({ data }) => {
+        if (data) setAmenityCatalog(data as AmenityItem[]);
+      });
   }, []);
 
   const TAX_RATE = 0.16;
@@ -47,7 +83,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
       const subtotal = hotel.price * nights * rooms;
       const totalWithTax = Math.round(subtotal * (1 + TAX_RATE));
       const matchesBudget = searchParams.budgetMax <= 0 ? true : totalWithTax <= searchParams.budgetMax;
-      const petOk = !searchParams.petFriendly || hotel.pet_friendly === true || (() => {
+      const petOk = !selectedPetFriendly || hotel.pet_friendly === true || (() => {
         const a = (hotel.amenities || []).join(' ').toLowerCase();
         const t = (hotel.tags || []).join(' ').toLowerCase();
         return /pet|mascota|animal/.test(a) || /pet|mascota|animal/.test(t);
@@ -55,9 +91,16 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
       const travelStyles = searchParams.travelStyles ?? [];
       const hotelStyles = hotel.travel_styles ?? [];
       const matchesTravelStyles = travelStyles.length === 0 || travelStyles.some(s => hotelStyles.includes(s));
-      return matchesLocation && matchesStars && matchesAmenities && matchesBudget && petOk && matchesTravelStyles;
+      const hotelPlanTypes = (hotel.meal_plans ?? []).map((m) => m.type);
+      const hotelSinPlan = (hotel.meal_plans ?? []).length === 0;
+      const matchesPlans =
+        selectedPlans.length === 0 ||
+        selectedPlans.some((p) =>
+          p === 'sin_plan' ? hotelSinPlan : hotelPlanTypes.includes(p)
+        );
+      return matchesLocation && matchesStars && matchesAmenities && matchesBudget && petOk && matchesTravelStyles && matchesPlans;
     });
-  }, [hotels, searchParams, selectedStars, selectedAmenities, nights, rooms]);
+  }, [hotels, searchParams, selectedStars, selectedAmenities, selectedPlans, selectedPetFriendly, nights, rooms]);
 
   // Total menor y mayor encontrado en los resultados (precio × noches × habitaciones + impuestos, sin aplicar filtro de precio)
   const priceBounds = useMemo(() => {
@@ -100,7 +143,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
       const totalWithTax = totalWithTaxForFilter;
       const matchesBudget = searchParams.budgetMax <= 0 ? true : totalWithTax <= searchParams.budgetMax;
 
-      const petOk = !searchParams.petFriendly || hotel.pet_friendly === true || (() => {
+      const petOk = !selectedPetFriendly || hotel.pet_friendly === true || (() => {
         const a = (hotel.amenities || []).join(' ').toLowerCase();
         const t = (hotel.tags || []).join(' ').toLowerCase();
         return /pet|mascota|animal/.test(a) || /pet|mascota|animal/.test(t);
@@ -110,16 +153,105 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
       const hotelStyles = hotel.travel_styles ?? [];
       const matchesTravelStyles = travelStyles.length === 0 || travelStyles.some(s => hotelStyles.includes(s));
 
-      return matchesLocation && matchesPrice && matchesStars && matchesAmenities && matchesBudget && petOk && matchesTravelStyles;
+      const hotelPlanTypes = (hotel.meal_plans ?? []).map((m) => m.type);
+      const hotelSinPlan = (hotel.meal_plans ?? []).length === 0;
+      const matchesPlans =
+        selectedPlans.length === 0 ||
+        selectedPlans.some((p) =>
+          p === 'sin_plan' ? hotelSinPlan : hotelPlanTypes.includes(p)
+        );
+
+      return matchesLocation && matchesPrice && matchesStars && matchesAmenities && matchesBudget && petOk && matchesTravelStyles && matchesPlans;
     });
-  }, [hotels, searchParams, priceRange, selectedStars, selectedAmenities, nights, rooms]);
+  }, [hotels, searchParams, priceRange, selectedStars, selectedAmenities, selectedPlans, selectedPetFriendly, nights, rooms]);
 
   const toggleStar = (star: number) => {
     setSelectedStars(prev => prev.includes(star) ? prev.filter(s => s !== star) : [...prev, star]);
   };
 
-  const toggleAmenity = (amenity: string) => {
-    setSelectedAmenities(prev => prev.includes(amenity) ? prev.filter(a => a !== amenity) : [...prev, amenity]);
+  const toggleAmenity = (slug: string) => {
+    setSelectedAmenities(prev => prev.includes(slug) ? prev.filter(a => a !== slug) : [...prev, slug]);
+  };
+
+  const toggleAmenityCategory = (cat: string) => {
+    setExpandedAmenityCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
+  };
+
+  const amenityByCategory = useMemo(() => {
+    const map: Record<string, AmenityItem[]> = {};
+    amenityCatalog.forEach((a) => {
+      (map[a.category] ??= []).push(a);
+    });
+    Object.keys(map).forEach((cat) => map[cat].sort((a, b) => a.sort_order - b.sort_order));
+    return map;
+  }, [amenityCatalog]);
+  const amenityCategories = useMemo(() => [...new Set(amenityCatalog.map((a) => a.category))].sort(), [amenityCatalog]);
+  const amenityLabelBySlug = useMemo(() => {
+    const map: Record<string, string> = {};
+    amenityCatalog.forEach((a) => { map[a.slug] = a.label; });
+    return map;
+  }, [amenityCatalog]);
+
+  // Hoteles que coinciden con todos los filtros excepto amenidades (para contar por categoría)
+  const hotelsWithoutAmenityFilter = useMemo(() => {
+    return hotels.filter(hotel => {
+      const dest = searchParams.destination.toLowerCase().trim();
+      const stateCountry = [hotel.state, hotel.country].filter(Boolean).join(', ').toLowerCase();
+      const matchesLocation = dest === '' || hotel.location.toLowerCase().includes(dest) || dest.includes(hotel.location.toLowerCase()) || (stateCountry && (stateCountry.includes(dest) || dest.includes(stateCountry)));
+      const subtotal = hotel.price * nights * rooms;
+      const totalWithTaxForFilter = Math.round(subtotal * (1 + TAX_RATE));
+      const matchesPrice = totalWithTaxForFilter >= priceRange[0] && totalWithTaxForFilter <= priceRange[1];
+      const matchesStars = selectedStars.length === 0 || selectedStars.includes(hotel.stars);
+      const matchesBudget = searchParams.budgetMax <= 0 ? true : totalWithTaxForFilter <= searchParams.budgetMax;
+      const petOk = !selectedPetFriendly || hotel.pet_friendly === true || (() => {
+        const a = (hotel.amenities || []).join(' ').toLowerCase();
+        const t = (hotel.tags || []).join(' ').toLowerCase();
+        return /pet|mascota|animal/.test(a) || /pet|mascota|animal/.test(t);
+      })();
+      const travelStyles = searchParams.travelStyles ?? [];
+      const hotelStyles = hotel.travel_styles ?? [];
+      const matchesTravelStyles = travelStyles.length === 0 || travelStyles.some(s => hotelStyles.includes(s));
+      const hotelPlanTypes = (hotel.meal_plans ?? []).map((m) => m.type);
+      const hotelSinPlan = (hotel.meal_plans ?? []).length === 0;
+      const matchesPlans = selectedPlans.length === 0 || selectedPlans.some((p) => p === 'sin_plan' ? hotelSinPlan : hotelPlanTypes.includes(p));
+      return matchesLocation && matchesPrice && matchesStars && matchesBudget && petOk && matchesTravelStyles && matchesPlans;
+    });
+  }, [hotels, searchParams, priceRange, selectedStars, selectedPlans, selectedPetFriendly, nights, rooms]);
+
+  // Hoteles que cumplen el resto de filtros Y todas las amenidades ya seleccionadas (para que los números se actualicen al elegir)
+  const hotelsForAmenityCounts = useMemo(() => {
+    if (selectedAmenities.length === 0) return hotelsWithoutAmenityFilter;
+    return hotelsWithoutAmenityFilter.filter((h) =>
+      selectedAmenities.every((slug) => (h.amenities || []).includes(slug))
+    );
+  }, [hotelsWithoutAmenityFilter, selectedAmenities]);
+
+  // Por categoría: cuántos hoteles del set actual tienen al menos una amenidad de esa categoría
+  const amenityCategoryCount = useMemo(() => {
+    const count: Record<string, number> = {};
+    amenityCategories.forEach((cat) => {
+      const slugsInCat = (amenityByCategory[cat] ?? []).map((a) => a.slug);
+      count[cat] = hotelsForAmenityCounts.filter((h) => (h.amenities || []).some((slug) => slugsInCat.includes(slug))).length;
+    });
+    return count;
+  }, [amenityCategories, amenityByCategory, hotelsForAmenityCounts]);
+
+  // Por amenidad (slug): cuántos hoteles del set actual tienen esa amenidad
+  const amenitySlugCount = useMemo(() => {
+    const count: Record<string, number> = {};
+    amenityCatalog.forEach((a) => {
+      count[a.slug] = hotelsForAmenityCounts.filter((h) => (h.amenities || []).includes(a.slug)).length;
+    });
+    return count;
+  }, [amenityCatalog, hotelsForAmenityCounts]);
+
+  const togglePlan = (planValue: string) => {
+    setSelectedPlans(prev => prev.includes(planValue) ? prev.filter(p => p !== planValue) : [...prev, planValue]);
   };
 
   const totalGuests = searchParams.guests.adults + searchParams.guests.children;
@@ -152,7 +284,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
             <div className="bg-white dark:bg-[#1a2634] p-6 rounded-xl border border-[#e5e7eb] dark:border-gray-800 shadow-sm">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="font-bold text-lg dark:text-white">Filtros</h3>
-                <button className="text-xs font-semibold text-primary hover:underline" onClick={() => { setPriceRange([priceBounds.min, priceBounds.max]); setSelectedStars([]); setSelectedAmenities([]); }}>Limpiar todo</button>
+                <button className="text-xs font-semibold text-primary hover:underline" onClick={() => { setPriceRange([priceBounds.min, priceBounds.max]); setSelectedStars([]); setSelectedAmenities([]); setSelectedPlans([]); setSelectedPetFriendly(searchParams.petFriendly ?? false); }}>Limpiar todo</button>
               </div>
 
               {/* Price Filter: totales mínimo y máximo del viaje (precio × noches × habitaciones + impuestos) */}
@@ -202,20 +334,86 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
 
               <hr className="border-[#f0f2f4] dark:border-gray-700 my-6"/>
 
-              {/* Amenities Filter */}
+              {/* Plans Filter */}
               <div className="mb-8">
-                <p className="text-[#111418] dark:text-gray-200 text-sm font-semibold mb-4">Amenidades</p>
-                {["Spa", "Pool", "WiFi", "Gym", "All-Inclusive"].map(amenity => (
-                  <label key={amenity} className="flex items-center gap-3 cursor-pointer mb-2">
-                    <input 
-                      type="checkbox" 
+                <p className="text-[#111418] dark:text-gray-200 text-sm font-semibold mb-4">Planes</p>
+                {PLAN_OPTIONS.map(({ value, label }) => (
+                  <label key={value} className="flex items-center gap-3 cursor-pointer mb-2">
+                    <input
+                      type="checkbox"
                       className="rounded border-[#dbe0e6] text-primary focus:ring-primary/20 dark:bg-gray-700 dark:border-gray-600 size-5"
-                      checked={selectedAmenities.includes(amenity)}
-                      onChange={() => toggleAmenity(amenity)}
+                      checked={selectedPlans.includes(value)}
+                      onChange={() => togglePlan(value)}
                     />
-                    <span className="text-sm text-[#111418] dark:text-gray-300">{amenity}</span>
+                    <span className="text-sm text-[#111418] dark:text-gray-300">{label}</span>
                   </label>
                 ))}
+              </div>
+
+              <hr className="border-[#f0f2f4] dark:border-gray-700 my-6"/>
+
+              {/* Pet Friendly Filter */}
+              <div className="mb-8">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="rounded border-[#dbe0e6] text-primary focus:ring-primary/20 dark:bg-gray-700 dark:border-gray-600 size-5"
+                    checked={selectedPetFriendly}
+                    onChange={(e) => setSelectedPetFriendly(e.target.checked)}
+                  />
+                  <span className="flex items-center gap-2 text-sm text-[#111418] dark:text-gray-300">
+                    <span className="material-symbols-outlined text-[18px]">pets</span>
+                    Pet friendly
+                  </span>
+                </label>
+              </div>
+
+              <hr className="border-[#f0f2f4] dark:border-gray-700 my-6"/>
+
+              {/* Amenities Filter - catálogo agrupado por categoría */}
+              <div className="mb-8">
+                <p className="text-[#111418] dark:text-gray-200 text-sm font-semibold mb-3">Amenidades</p>
+                <p className="text-xs text-[#617289] dark:text-gray-400 mb-4">Marca las que quieras en tu hotel.</p>
+                {amenityCatalog.length === 0 ? (
+                  <p className="text-xs text-[#617289] dark:text-gray-400">Cargando opciones...</p>
+                ) : (
+                  <div className="space-y-5">
+                    {amenityCategories.map((cat) => {
+                      const isExpanded = expandedAmenityCategories.has(cat);
+                      return (
+                      <div key={cat}>
+                        <button
+                          type="button"
+                          onClick={() => toggleAmenityCategory(cat)}
+                          className="flex items-center gap-2 w-full text-left text-[10px] font-bold text-black dark:text-gray-200 uppercase tracking-wider mb-2 hover:opacity-80 transition-opacity"
+                        >
+                          <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
+                            expand_more
+                          </span>
+                          {AMENITY_CATEGORY_LABELS[cat] ?? cat} <span className="font-extrabold">({amenityCategoryCount[cat] ?? 0})</span>
+                        </button>
+                        {isExpanded && (
+                        <div className="space-y-1.5">
+                          {(amenityByCategory[cat] ?? []).map((a) => (
+                            <label key={a.slug} className="flex items-center gap-3 cursor-pointer group">
+                              <input
+                                type="checkbox"
+                                className="rounded border-[#dbe0e6] text-primary focus:ring-primary/20 dark:bg-gray-700 dark:border-gray-600 size-4 flex-shrink-0"
+                                checked={selectedAmenities.includes(a.slug)}
+                                onChange={() => toggleAmenity(a.slug)}
+                              />
+                              <span className="text-sm text-[#111418] dark:text-gray-300 group-hover:text-primary transition-colors">
+                                {a.label} <span className="text-primary font-medium">({amenitySlugCount[a.slug] ?? 0})</span>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                        )}
+                      </div>
+                    );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -240,7 +438,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
                   const cityLabel = hotel.state && hotel.country ? [hotel.state, hotel.country].filter(Boolean).join(', ') : hotel.location;
                   const features: string[] = [];
                   if (hotel.pet_friendly) features.push('El hotel acepta mascotas.');
-                  if (hotel.amenities?.length) features.push(hotel.amenities[0] || '');
+                  if (hotel.amenities?.length) features.push(amenityLabelBySlug[hotel.amenities[0]] ?? hotel.amenities[0]);
                   if (!features.length) features.push('Alto estándar de limpieza');
 
                   return (
@@ -248,14 +446,14 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
                       key={hotel.id}
                       className={`group bg-white dark:bg-[#1a2634] rounded-xl overflow-hidden border border-[#e5e7eb] dark:border-gray-800 shadow-sm hover:shadow-md transition-shadow flex flex-col sm:flex-row ${hotel.isSoldOut ? 'opacity-75' : ''}`}
                     >
-                      {/* Imagen: una sola, sin carrusel */}
-                      <div className="relative w-full sm:w-[42%] min-h-[220px] sm:min-h-[240px] flex-shrink-0">
+                      {/* Imagen: una sola, animación zoom al hover */}
+                      <div className="relative w-full sm:w-[42%] min-h-[220px] sm:min-h-[240px] flex-shrink-0 overflow-hidden">
                         {hotel.isSoldOut && (
                           <div className="absolute inset-0 bg-black/40 z-20 flex items-center justify-center">
                             <span className="bg-black/80 text-white px-4 py-1.5 rounded-lg text-sm font-bold">Agotado</span>
                           </div>
                         )}
-                        <div className="h-full w-full bg-cover bg-center" style={{ backgroundImage: `url("${hotel.image}")` }} />
+                        <div className="h-full w-full bg-cover bg-center transition-transform duration-500 ease-out group-hover:scale-110" style={{ backgroundImage: `url("${hotel.image}")` }} />
                       </div>
 
                       {/* Datos del hotel: ubicación, nombre, estrellas, características */}

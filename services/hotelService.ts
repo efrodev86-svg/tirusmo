@@ -70,6 +70,7 @@ type HotelRow = {
   isSoldOut?: boolean | null;
   pet_friendly?: boolean | null;
   travel_styles?: string[] | null;
+  meal_plans?: { type?: string; cost?: number; cost_children?: number }[] | null;
 };
 
 function mapRowToHotel(row: HotelRow): Hotel {
@@ -90,6 +91,9 @@ function mapRowToHotel(row: HotelRow): Hotel {
     isSoldOut: Boolean(row.isSoldOut),
     pet_friendly: Boolean(row.pet_friendly),
     travel_styles: Array.isArray(row.travel_styles) ? row.travel_styles : [],
+    meal_plans: Array.isArray(row.meal_plans)
+      ? row.meal_plans.map((m) => ({ type: String(m?.type ?? ''), cost: Number(m?.cost ?? 0), cost_children: Number(m?.cost_children ?? 0) }))
+      : [],
   };
 }
 
@@ -100,7 +104,7 @@ function mapRowToHotel(row: HotelRow): Hotel {
 export const getHotels = async (): Promise<Hotel[]> => {
   const { data, error } = await supabase
     .from('hotels')
-    .select('id, name, location, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", pet_friendly, travel_styles')
+    .select('id, name, location, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", pet_friendly, travel_styles, meal_plans')
     .order('id', { ascending: true });
 
   if (error) {
@@ -119,7 +123,7 @@ export const getHotelById = async (id: number): Promise<Hotel | undefined> => {
 
   const { data, error } = await supabase
     .from('hotels')
-    .select('id, name, location, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", pet_friendly, travel_styles')
+    .select('id, name, location, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", pet_friendly, travel_styles, meal_plans')
     .eq('id', id)
     .maybeSingle();
 

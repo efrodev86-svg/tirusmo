@@ -25,12 +25,14 @@ interface AdminHotelsProps {
   onManageRooms?: (hotelId: string) => void;
   /** Navega a la página de registrar hotel (formulario completo como editar). */
   onNavigateToCreate?: () => void;
+  /** Navega al catálogo de amenidades. */
+  onNavigateToAmenities?: () => void;
   refreshKey?: number;
 }
 
 const PAGE_SIZES = [5, 10, 20, 50];
 
-export const AdminHotels: React.FC<AdminHotelsProps> = ({ onSelectHotel, onManageRooms, onNavigateToCreate, refreshKey = 0 }) => {
+export const AdminHotels: React.FC<AdminHotelsProps> = ({ onSelectHotel, onManageRooms, onNavigateToCreate, onNavigateToAmenities, refreshKey = 0 }) => {
   const [hotels, setHotels] = useState<HotelRow[]>([]);
   const [roomCounts, setRoomCounts] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
@@ -114,10 +116,18 @@ export const AdminHotels: React.FC<AdminHotelsProps> = ({ onSelectHotel, onManag
           </select>
           <span className="text-sm text-gray-500">por página</span>
         </div>
-        <button type="button" onClick={() => onNavigateToCreate?.()} className="bg-primary hover:bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-md shadow-blue-200 flex items-center gap-2">
-          <span className="material-symbols-outlined text-[20px]">add_circle</span>
-          Registrar Hotel
-        </button>
+        <div className="flex gap-2">
+          {onNavigateToAmenities && (
+            <button type="button" onClick={onNavigateToAmenities} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-5 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2">
+              <span className="material-symbols-outlined text-[20px]">tune</span>
+              Amenidades
+            </button>
+          )}
+          <button type="button" onClick={() => onNavigateToCreate?.()} className="bg-primary hover:bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-md shadow-blue-200 flex items-center gap-2">
+            <span className="material-symbols-outlined text-[20px]">add_circle</span>
+            Registrar Hotel
+          </button>
+        </div>
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>}
