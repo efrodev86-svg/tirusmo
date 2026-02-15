@@ -1,6 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Hotel, SearchParams, BookingStep, GuestDetails } from '../types';
 import { TermsAndConditions } from './TermsAndConditions';
+import { supabase } from '../lib/supabase';
+
+const STICKY_TOP_PX = 24;
+
+type RoomOption = { id: number; name: string; type: string; price: number; image: string; amenities: string[] };
 
 interface BookingWizardProps {
   hotel: Hotel;
@@ -19,13 +24,91 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
   });
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
-  
+  const [selectedMealPlan, setSelectedMealPlan] = useState<'desayuno' | 'todo_incluido' | 'sin_plan' | null>(null);
+  const [hotelRooms, setHotelRooms] = useState<RoomOption[]>([]);
+  const [loadingRooms, setLoadingRooms] = useState(true);
+  const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null);
+  const priceColumnRef = useRef<HTMLDivElement>(null);
+  const priceSentinelRef = useRef<HTMLDivElement>(null);
+  const priceCardRef = useRef<HTMLDivElement>(null);
+  const [priceStickyStyle, setPriceStickyStyle] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [pricePlaceholderHeight, setPricePlaceholderHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!hotel?.id) return;
+    let cancelled = false;
+    setLoadingRooms(true);
+    supabase
+      .from('rooms')
+      .select('id, name, type, price, image, amenities')
+      .eq('hotel_id', hotel.id)
+      .eq('status', 'DISPONIBLE')
+      .order('price')
+      .then(({ data }) => {
+        if (cancelled) return;
+        const list: RoomOption[] = (data ?? []).map((r: Record<string, unknown>) => ({
+          id: r.id as number,
+          name: (r.name as string) || 'Habitación',
+          type: (r.type as string) || '',
+          price: Number(r.price) || 0,
+          image: (r.image as string) || '',
+          amenities: Array.isArray(r.amenities) ? (r.amenities as string[]) : [],
+        }));
+        setHotelRooms(list);
+        setSelectedRoomId(list.length > 0 ? list[0].id : null);
+      })
+      .finally(() => { if (!cancelled) setLoadingRooms(false); });
+    return () => { cancelled = true; };
+  }, [hotel?.id]);
+
+  const selectedRoom = hotelRooms.find((r) => r.id === selectedRoomId);
+  const roomPrice = selectedRoom?.price ?? hotel.price;
+
+  const selectedPlanItem = selectedMealPlan ? hotel.meal_plans?.find((p) => p.type === selectedMealPlan) : null;
+  const mealPlanCostPerNight = selectedPlanItem?.cost ?? 0;
+
   // Calculate Totals
   const nights = 4; // Mock calculation, normally diff(checkOut, checkIn)
-  const roomTotal = nights * hotel.price;
-  const taxes = roomTotal * 0.12;
+  const roomTotal = nights * roomPrice;
+  const mealPlanTotalForStay = mealPlanCostPerNight * nights;
+  const subtotalBeforeTax = roomTotal + mealPlanTotalForStay;
+  const taxes = subtotalBeforeTax * 0.12;
   const service = 41;
-  const total = roomTotal + taxes + service;
+  const total = subtotalBeforeTax + taxes + service;
+
+  // Revisión de Reserva (step 1): desglose de precios siempre visible al hacer scroll
+  useEffect(() => {
+    if (step !== BookingStep.SELECTION) {
+      setPriceStickyStyle(null);
+      setPricePlaceholderHeight(null);
+      return;
+    }
+    const isLg = () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches;
+    const updateSticky = () => {
+      if (!isLg() || !priceColumnRef.current || !priceCardRef.current || !priceSentinelRef.current) {
+        setPriceStickyStyle(null);
+        setPricePlaceholderHeight(null);
+        return;
+      }
+      const sentinelTop = priceSentinelRef.current.getBoundingClientRect().top;
+      const colRect = priceColumnRef.current.getBoundingClientRect();
+      const cardRect = priceCardRef.current.getBoundingClientRect();
+      if (sentinelTop <= STICKY_TOP_PX) {
+        setPriceStickyStyle({ top: STICKY_TOP_PX, left: colRect.left, width: colRect.width });
+        setPricePlaceholderHeight(cardRect.height);
+      } else {
+        setPriceStickyStyle(null);
+        setPricePlaceholderHeight(null);
+      }
+    };
+    updateSticky();
+    window.addEventListener('scroll', updateSticky, { passive: true });
+    window.addEventListener('resize', updateSticky);
+    return () => {
+      window.removeEventListener('scroll', updateSticky);
+      window.removeEventListener('resize', updateSticky);
+    };
+  }, [step, roomPrice, roomTotal, total, nights]);
 
   // Validation
   const validateGuestDetails = () => {
@@ -55,8 +138,8 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
   );
 
   const renderSelectionStep = () => (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        <div className="lg:col-span-8 flex flex-col gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start overflow-visible">
+        <div className="lg:col-span-8 flex flex-col gap-6 min-w-0">
             <div className="bg-white dark:bg-[#1a222d] rounded-xl border border-[#e5e7eb] dark:border-[#2a3441] overflow-hidden shadow-sm">
                 <div className="relative h-64 md:h-80 w-full group">
                     <div className="w-full h-full bg-center bg-no-repeat bg-cover transition-transform duration-700 group-hover:scale-105" style={{backgroundImage: `url("${hotel.image}")`}}></div>
@@ -109,33 +192,149 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
                             </div>
                         </div>
                     </div>
-                    <hr className="border-gray-100 dark:border-gray-700 mb-8"/>
-                    <div>
-                        <h3 className="text-xl font-bold text-[#111418] dark:text-white mb-4">Detalles de la Habitación</h3>
-                        <div className="bg-blue-50 dark:bg-primary/5 border border-blue-100 dark:border-primary/10 rounded-lg p-4 mb-6">
-                            <h4 className="font-bold text-primary text-lg">Habitación Deluxe con Vista al Mar</h4>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-8">
-                            {hotel.amenities.map(a => (
-                                <div key={a} className="flex items-center gap-3 text-gray-700 dark:text-gray-300">
-                                    <span className="material-symbols-outlined text-primary">check_circle</span>
-                                    <span className="font-medium">{a}</span>
+                    {/* Amenidades, Pet friendly, Planes — debajo de check-in */}
+                    <div className="flex flex-wrap gap-4 mb-6 p-4 rounded-xl bg-background-light dark:bg-[#101822] border border-gray-100 dark:border-[#2a3441]">
+                        {(hotel.amenities && hotel.amenities.length > 0) && (
+                            <div className="flex flex-col gap-1">
+                                <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Amenidades</span>
+                                <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-[#111418] dark:text-gray-300">
+                                    {hotel.amenities.map((a) => (
+                                        <span key={a} className="inline-flex items-center gap-1.5">
+                                            <span className="material-symbols-outlined text-primary text-[16px]">check_circle</span>
+                                            {a.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                                        </span>
+                                    ))}
                                 </div>
-                            ))}
+                            </div>
+                        )}
+                        <div className="flex flex-col gap-2">
+                            <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Pet friendly</span>
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-[#1a222d] border border-gray-200 dark:border-[#2a3441] text-sm ${hotel.pet_friendly ? 'text-[#111418] dark:text-gray-300' : 'text-gray-500 dark:text-gray-500'}`}>
+                                <span className={`material-symbols-outlined text-[16px] ${hotel.pet_friendly ? 'text-primary' : 'text-gray-400'}`}>pets</span>
+                                {hotel.pet_friendly ? 'Sí' : 'No'}
+                            </span>
                         </div>
+                    </div>
+                    {/* Plan de alimentos: opciones que ofrece el hotel + Sin plan */}
+                    {(() => {
+                        const planTypes = new Set<string>(hotel.meal_plans?.map((p) => p.type) ?? []);
+                        planTypes.add('sin_plan');
+                        const options = Array.from(planTypes).map((type) => {
+                            const plan = hotel.meal_plans?.find((p) => p.type === type);
+                            const label = type === 'desayuno' ? 'Desayuno' : type === 'todo_incluido' ? 'Todo incluido' : 'Sin plan de alimentos';
+                            const cost = plan?.cost ?? 0;
+                            return { type: type as 'desayuno' | 'todo_incluido' | 'sin_plan', label, cost };
+                        });
+                        const current = selectedMealPlan ?? (options.some((o) => o.type === 'sin_plan') ? 'sin_plan' : options[0]?.type ?? null);
+                        return (
+                            <div className="mt-6">
+                                <h3 className="text-lg font-bold text-[#111418] dark:text-white mb-3">Plan de alimentos</h3>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Elige el plan que ofrece el hotel (si aplica).</p>
+                                <div className="flex flex-wrap gap-3">
+                                    {options.map((opt) => {
+                                        const isSelected = current === opt.type;
+                                        return (
+                                            <button
+                                                key={opt.type}
+                                                type="button"
+                                                onClick={() => setSelectedMealPlan(opt.type)}
+                                                className={`inline-flex items-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-colors ${
+                                                    isSelected
+                                                        ? 'bg-primary/10 border-primary text-primary dark:bg-primary/20 dark:border-primary dark:text-primary'
+                                                        : 'bg-white dark:bg-[#1a222d] border-gray-200 dark:border-[#2a3441] text-[#111418] dark:text-gray-300 hover:border-primary/50'
+                                                }`}
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">restaurant</span>
+                                                {opt.label}
+                                                {opt.cost > 0 && <span className="text-gray-500 dark:text-gray-400">+${opt.cost}</span>}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    })()}
+                    {/* Habitaciones: selección de habitación del hotel */}
+                    <div className="mt-6">
+                        <h3 className="text-lg font-bold text-[#111418] dark:text-white mb-3">Habitaciones</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Elige la habitación para tu estancia.</p>
+                        {loadingRooms ? (
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Cargando habitaciones...</p>
+                        ) : hotelRooms.length === 0 ? (
+                            <div className="p-4 rounded-xl bg-background-light dark:bg-[#101822] border border-gray-100 dark:border-[#2a3441] text-sm text-gray-500 dark:text-gray-400">
+                                No hay habitaciones disponibles en este momento. El total se calcula con el precio base del hotel.
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 gap-4">
+                                {hotelRooms.map((room) => {
+                                    const isSelected = selectedRoomId === room.id;
+                                    return (
+                                        <button
+                                            key={room.id}
+                                            type="button"
+                                            onClick={() => setSelectedRoomId(room.id)}
+                                            className={`text-left rounded-xl border overflow-hidden transition-all flex flex-row ${
+                                                isSelected
+                                                    ? 'ring-2 ring-primary border-primary bg-primary/5 dark:bg-primary/10'
+                                                    : 'border-gray-200 dark:border-[#2a3441] bg-white dark:bg-[#1a222d] hover:border-primary/50'
+                                            }`}
+                                        >
+                                            <div className="w-[280px] h-[210px] flex-shrink-0 bg-gray-100 dark:bg-gray-800">
+                                                {room.image ? (
+                                                    <img src={room.image} alt="" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center text-gray-400">
+                                                        <span className="material-symbols-outlined text-3xl">bed</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="p-3 flex-1 min-w-0 flex flex-col justify-center">
+                                                <p className="font-bold text-[#111418] dark:text-white truncate">{room.name}</p>
+                                                {room.type && <p className="text-xs text-gray-500 dark:text-gray-400">{room.type}</p>}
+                                                <p className="text-sm font-semibold text-primary mt-1">${room.price.toFixed(0)} / noche</p>
+                                                {room.amenities && room.amenities.length > 0 && (
+                                                  <div className="flex flex-wrap gap-1.5 mt-2">
+                                                    {room.amenities.slice(0, 5).map((a) => (
+                                                      <span key={a} className="inline-block px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-700 text-[10px] font-medium text-gray-600 dark:text-gray-300 truncate max-w-[100px]">
+                                                        {a}
+                                                      </span>
+                                                    ))}
+                                                    {room.amenities.length > 5 && (
+                                                      <span className="text-[10px] text-gray-400">+{room.amenities.length - 5}</span>
+                                                    )}
+                                                  </div>
+                                                )}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
         </div>
-        <div className="lg:col-span-4">
-            <div className="sticky top-24 flex flex-col gap-4">
+        <div ref={priceColumnRef} className="lg:col-span-4 overflow-visible relative">
+            <div ref={priceSentinelRef} className="absolute top-0 left-0 w-px h-px pointer-events-none" aria-hidden="true" />
+            {pricePlaceholderHeight != null && <div style={{ height: pricePlaceholderHeight }} aria-hidden="true" />}
+            <div
+              ref={priceCardRef}
+              className="self-start flex flex-col gap-4 w-full"
+              style={priceStickyStyle ? { position: 'fixed', top: priceStickyStyle.top, left: priceStickyStyle.left, width: priceStickyStyle.width, zIndex: 30 } : undefined}
+            >
                 <div className="bg-white dark:bg-[#1a222d] rounded-xl border border-[#e5e7eb] dark:border-[#2a3441] shadow-lg shadow-gray-200/50 dark:shadow-none p-6">
                     <h3 className="text-lg font-bold text-[#111418] dark:text-white mb-6 pb-4 border-b border-gray-100 dark:border-gray-700">Desglose de Precios</h3>
                     <div className="flex flex-col gap-3">
                         <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                            <span>{nights} noches x ${hotel.price}</span>
+                            <span>{nights} noches x ${roomPrice.toFixed(0)}</span>
                             <span className="font-medium text-[#111418] dark:text-white">${roomTotal.toFixed(2)}</span>
                         </div>
+                        {mealPlanTotalForStay > 0 && (
+                        <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                            <span>Plan de alimentos ({nights} noches)</span>
+                            <span className="font-medium text-[#111418] dark:text-white">${mealPlanTotalForStay.toFixed(2)}</span>
+                        </div>
+                        )}
                         <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
                             <span>Impuestos (12%)</span>
                             <span className="font-medium text-[#111418] dark:text-white">${taxes.toFixed(2)}</span>
@@ -157,10 +356,23 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
                 </div>
             </div>
         </div>
+        {/* Barra fija en móvil: desglose siempre visible al hacer scroll */}
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-20 bg-white dark:bg-[#1a222d] border-t border-gray-200 dark:border-gray-700 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] dark:shadow-[0_-4px_12px_rgba(0,0,0,0.3)] px-4 py-3 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Total a pagar</p>
+            <p className="text-xl font-black text-primary">${total.toFixed(2)}</p>
+          </div>
+          <button onClick={() => setStep(BookingStep.DETAILS)} className="flex-shrink-0 flex items-center justify-center rounded-xl h-12 px-6 bg-primary hover:bg-blue-600 text-white font-bold text-sm shadow-lg group transition-all">
+            <span>Continuar</span>
+            <span className="material-symbols-outlined ml-1.5 text-[18px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+          </button>
+        </div>
+        <div className="lg:hidden h-20" aria-hidden="true" />
     </div>
   );
 
   const renderGuestDetailsStep = () => (
+      <div className="relative">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           <div className="lg:col-span-8 flex flex-col gap-6">
               <div className="bg-white dark:bg-[#1a222d] rounded-xl border border-[#e5e7eb] dark:border-[#2a3441] p-6 shadow-sm">
@@ -224,17 +436,41 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
                   </button>
               </div>
           </div>
-          <div className="lg:col-span-4">
-              {/* Mini Summary */}
-              <div className="bg-white dark:bg-[#1a222d] rounded-xl border border-[#e5e7eb] dark:border-[#2a3441] shadow-sm p-6">
-                <h4 className="font-bold mb-4">Resumen</h4>
-                <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm text-gray-500">Total</span>
-                    <span className="font-bold text-lg">${total.toFixed(2)}</span>
+          <div className="lg:col-span-4 overflow-visible">
+              <div className="lg:sticky lg:top-24 self-start z-30 w-full">
+                <div className="bg-white dark:bg-[#1a222d] rounded-xl border border-[#e5e7eb] dark:border-[#2a3441] shadow-lg shadow-gray-200/50 dark:shadow-none p-6">
+                  <h3 className="text-lg font-bold text-[#111418] dark:text-white mb-6 pb-4 border-b border-gray-100 dark:border-gray-700">Desglose de Precios</h3>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                      <span>{nights} noches x ${roomPrice.toFixed(0)}</span>
+                      <span className="font-medium text-[#111418] dark:text-white">${roomTotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                      <span>Impuestos (12%)</span>
+                      <span className="font-medium text-[#111418] dark:text-white">${taxes.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                      <span>Tarifa servicio</span>
+                      <span className="font-medium text-[#111418] dark:text-white">${service.toFixed(2)}</span>
+                    </div>
+                    <div className="my-4 h-px border-t border-dashed border-gray-300 dark:border-gray-600" />
+                    <div className="flex justify-between items-end">
+                      <span className="text-sm font-medium text-gray-500">Total a pagar</span>
+                      <span className="text-2xl font-black text-primary">${total.toFixed(2)}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-xs text-gray-400">Incluye impuestos y cargos</div>
               </div>
           </div>
+      </div>
+        {/* Móvil: barra fija con total para ver precios al hacer scroll */}
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-20 bg-white dark:bg-[#1a222d] border-t border-gray-200 dark:border-gray-700 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] px-4 py-3 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Total a pagar</p>
+            <p className="text-xl font-black text-primary">${total.toFixed(2)}</p>
+          </div>
+        </div>
+        <div className="lg:hidden h-16" aria-hidden="true" />
       </div>
   );
 

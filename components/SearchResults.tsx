@@ -19,6 +19,12 @@ const AMENITY_CATEGORY_LABELS: Record<string, string> = {
 
 const TRAVEL_STYLE_OPTIONS = ['Romántico', 'Pareja', 'Amigos', 'Familiar'] as const;
 
+const formatPrice = (n: number) => n.toLocaleString('es-MX', { maximumFractionDigits: 0 });
+const parsePriceInput = (s: string) => {
+  const digits = s.replace(/\D/g, '');
+  return digits === '' ? NaN : Number(digits);
+};
+
 interface SearchResultsProps {
   searchParams: SearchParams;
   onSelectHotel: (hotel: Hotel) => void;
@@ -314,11 +320,11 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
                 <div className="flex gap-2 mb-4">
                   <div className="flex-1">
                     <label className="text-[10px] text-[#617289] dark:text-gray-400 uppercase font-bold mb-1 block">Total Mín</label>
-                    <input className="w-full px-2 py-2 border border-[#dbe0e6] dark:border-gray-700 dark:bg-gray-800 rounded text-sm" type="number" min={priceBounds.min} max={priceBounds.max} value={priceRange[0]} onChange={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v)) setPriceRange([Math.max(priceBounds.min, Math.min(v, priceRange[1])), priceRange[1]]); }}/>
+                    <input className="w-full px-2 py-2 border border-[#dbe0e6] dark:border-gray-700 dark:bg-gray-800 rounded text-sm" type="text" inputMode="numeric" value={formatPrice(priceRange[0])} onChange={(e) => { const v = parsePriceInput(e.target.value); if (!Number.isNaN(v)) setPriceRange([Math.max(priceBounds.min, Math.min(v, priceRange[1])), priceRange[1]]); }}/>
                   </div>
                   <div className="flex-1">
                     <label className="text-[10px] text-[#617289] dark:text-gray-400 uppercase font-bold mb-1 block">Total Máx</label>
-                    <input className="w-full px-2 py-2 border border-[#dbe0e6] dark:border-gray-700 dark:bg-gray-800 rounded text-sm" type="number" min={priceBounds.min} max={priceBounds.max} value={priceRange[1]} onChange={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v)) setPriceRange([priceRange[0], Math.min(priceBounds.max, Math.max(v, priceRange[0]))]); }}/>
+                    <input className="w-full px-2 py-2 border border-[#dbe0e6] dark:border-gray-700 dark:bg-gray-800 rounded text-sm" type="text" inputMode="numeric" value={formatPrice(priceRange[1])} onChange={(e) => { const v = parsePriceInput(e.target.value); if (!Number.isNaN(v)) setPriceRange([priceRange[0], Math.min(priceBounds.max, Math.max(v, priceRange[0]))]); }}/>
                   </div>
                 </div>
                 <input 
