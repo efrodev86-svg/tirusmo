@@ -59,12 +59,15 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
     });
   }, [hotels, searchParams, selectedStars, selectedAmenities, nights, rooms]);
 
-  // Precio menor y mayor encontrado en los resultados (sin aplicar filtro de precio)
+  // Total menor y mayor encontrado en los resultados (precio × noches × habitaciones + impuestos, sin aplicar filtro de precio)
   const priceBounds = useMemo(() => {
     if (hotelsWithoutPriceFilter.length === 0) return { min: 0, max: 2000 };
-    const prices = hotelsWithoutPriceFilter.map(h => h.price);
-    return { min: Math.min(...prices), max: Math.max(...prices) };
-  }, [hotelsWithoutPriceFilter]);
+    const totals = hotelsWithoutPriceFilter.map(h => {
+      const subtotal = h.price * nights * rooms;
+      return Math.round(subtotal * (1 + TAX_RATE));
+    });
+    return { min: Math.min(...totals), max: Math.max(...totals) };
+  }, [hotelsWithoutPriceFilter, nights, rooms]);
 
   // Al cargar resultados, colocar el rango de precio en el menor y mayor encontrado
   const hasInitializedPriceRange = React.useRef(false);
@@ -85,15 +88,16 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
                               dest.includes(hotel.location.toLowerCase()) ||
                               (stateCountry && (stateCountry.includes(dest) || dest.includes(stateCountry)));
       
-      const matchesPrice = hotel.price >= priceRange[0] && hotel.price <= priceRange[1];
+      const subtotal = hotel.price * nights * rooms;
+      const totalWithTaxForFilter = Math.round(subtotal * (1 + TAX_RATE));
+      const matchesPrice = totalWithTaxForFilter >= priceRange[0] && totalWithTaxForFilter <= priceRange[1];
       
       const matchesStars = selectedStars.length === 0 || selectedStars.includes(hotel.stars);
       
       const matchesAmenities = selectedAmenities.every(a => hotel.amenities.includes(a));
 
       // Presupuesto: total del viaje (precio × noches × habitaciones + impuestos) <= budgetMax
-      const subtotal = hotel.price * nights * rooms;
-      const totalWithTax = Math.round(subtotal * (1 + TAX_RATE));
+      const totalWithTax = totalWithTaxForFilter;
       const matchesBudget = searchParams.budgetMax <= 0 ? true : totalWithTax <= searchParams.budgetMax;
 
       const petOk = !searchParams.petFriendly || hotel.pet_friendly === true || (() => {
@@ -151,17 +155,16 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
                 <button className="text-xs font-semibold text-primary hover:underline" onClick={() => { setPriceRange([priceBounds.min, priceBounds.max]); setSelectedStars([]); setSelectedAmenities([]); }}>Limpiar todo</button>
               </div>
 
-              {/* Price Filter: precio menor y mayor encontrado */}
+              {/* Price Filter: totales mínimo y máximo del viaje (precio × noches × habitaciones + impuestos) */}
               <div className="mb-8">
-                <p className="text-[#111418] dark:text-gray-200 text-sm font-semibold mb-4">Rango de Precio</p>
-                <p className="text-[10px] text-[#617289] dark:text-gray-400 mb-2">Encontrado: ${priceBounds.min.toLocaleString('es-MX')} – ${priceBounds.max.toLocaleString('es-MX')} MXN</p>
+                <p className="text-[#111418] dark:text-gray-200 text-sm font-semibold mb-4">Rango de Precio (Total del viaje)</p>
                 <div className="flex gap-2 mb-4">
                   <div className="flex-1">
-                    <label className="text-[10px] text-[#617289] dark:text-gray-400 uppercase font-bold mb-1 block">Mín</label>
+                    <label className="text-[10px] text-[#617289] dark:text-gray-400 uppercase font-bold mb-1 block">Total Mín</label>
                     <input className="w-full px-2 py-2 border border-[#dbe0e6] dark:border-gray-700 dark:bg-gray-800 rounded text-sm" type="number" min={priceBounds.min} max={priceBounds.max} value={priceRange[0]} onChange={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v)) setPriceRange([Math.max(priceBounds.min, Math.min(v, priceRange[1])), priceRange[1]]); }}/>
                   </div>
                   <div className="flex-1">
-                    <label className="text-[10px] text-[#617289] dark:text-gray-400 uppercase font-bold mb-1 block">Máx</label>
+                    <label className="text-[10px] text-[#617289] dark:text-gray-400 uppercase font-bold mb-1 block">Total Máx</label>
                     <input className="w-full px-2 py-2 border border-[#dbe0e6] dark:border-gray-700 dark:bg-gray-800 rounded text-sm" type="number" min={priceBounds.min} max={priceBounds.max} value={priceRange[1]} onChange={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v)) setPriceRange([priceRange[0], Math.min(priceBounds.max, Math.max(v, priceRange[0]))]); }}/>
                   </div>
                 </div>
@@ -247,9 +250,6 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
                     >
                       {/* Imagen: una sola, sin carrusel */}
                       <div className="relative w-full sm:w-[42%] min-h-[220px] sm:min-h-[240px] flex-shrink-0">
-                        <button type="button" className="absolute top-3 left-3 z-10 w-9 h-9 rounded-full bg-white/90 dark:bg-black/60 flex items-center justify-center shadow-sm hover:bg-white text-gray-700 dark:text-gray-200" aria-label="Favoritos">
-                          <span className="material-symbols-outlined text-[20px]">favorite</span>
-                        </button>
                         {hotel.isSoldOut && (
                           <div className="absolute inset-0 bg-black/40 z-20 flex items-center justify-center">
                             <span className="bg-black/80 text-white px-4 py-1.5 rounded-lg text-sm font-bold">Agotado</span>

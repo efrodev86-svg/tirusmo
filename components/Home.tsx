@@ -9,10 +9,20 @@ interface HomeProps {
   onSelectFeatured: (hotelId: number) => void;
 }
 
+const getDefaultCheckIn = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+const getDefaultCheckOut = () => {
+  const d = new Date();
+  d.setDate(d.getDate() + 3);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
   const [destination, setDestination] = useState("");
-  const [checkIn, setCheckIn] = useState("2023-10-15");
-  const [checkOut, setCheckOut] = useState("2023-10-19");
+  const [checkIn, setCheckIn] = useState(getDefaultCheckIn);
+  const [checkOut, setCheckOut] = useState(getDefaultCheckOut);
   
   // Guest State
   const [adults, setAdults] = useState(2);

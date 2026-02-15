@@ -90,6 +90,7 @@ type PlanInclusionItem = { title: string; description: string };
 
 type HotelForm = {
   name: string;
+  phone: string;
   location: string;
   municipality: string;
   state: string;
@@ -122,6 +123,7 @@ interface AdminHotelEditProps {
 export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack, onSuccess }) => {
   const [form, setForm] = useState<HotelForm>({
     name: '',
+    phone: '',
     location: '',
     municipality: '',
     state: '',
@@ -172,7 +174,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
     (async () => {
       const { data, error: err } = await supabase
         .from('hotels')
-        .select('id, name, location, municipality, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", check_in_time, check_out_time, meal_plans, travel_styles, pet_friendly, plan_inclusions')
+        .select('id, name, phone, location, municipality, state, country, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", check_in_time, check_out_time, meal_plans, travel_styles, pet_friendly, plan_inclusions')
         .eq('id', idNum)
         .single();
       if (err || !data) {
@@ -183,6 +185,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
       if (!cancelled) {
         setForm({
           name: data.name || '',
+          phone: data.phone || '',
           location: data.location || '',
           municipality: data.municipality ?? '',
           state: data.state ?? '',
@@ -363,6 +366,7 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
     try {
       const payload = {
         name: form.name.trim(),
+        phone: form.phone.trim() || null,
         location: form.location.trim(),
         municipality: form.municipality.trim() || null,
         state: form.state.trim() || null,
@@ -443,6 +447,10 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Nombre *</label>
               <input type="text" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary" required />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Teléfono de contacto</label>
+              <input type="tel" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary" placeholder="Ej. +52 55 1234 5678" />
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Ubicación *</label>
