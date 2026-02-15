@@ -17,6 +17,8 @@ const AMENITY_CATEGORY_LABELS: Record<string, string> = {
   general: 'General',
 };
 
+const TRAVEL_STYLE_OPTIONS = ['Romántico', 'Pareja', 'Amigos', 'Familiar'] as const;
+
 interface SearchResultsProps {
   searchParams: SearchParams;
   onSelectHotel: (hotel: Hotel) => void;
@@ -35,6 +37,8 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
   const [selectedPetFriendly, setSelectedPetFriendly] = useState(searchParams.petFriendly ?? false);
   const [amenityCatalog, setAmenityCatalog] = useState<AmenityItem[]>([]);
   const [expandedAmenityCategories, setExpandedAmenityCategories] = useState<Set<string>>(new Set());
+  const [headerTravelStyles, setHeaderTravelStyles] = useState<string[]>(searchParams.travelStyles ?? []);
+  const [priceSort, setPriceSort] = useState<'mayor_precio' | 'menor_precio' | ''>('');
 
   const PLAN_OPTIONS = [
     { value: 'desayuno', label: 'Desayuno' },
@@ -59,6 +63,10 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
         if (data) setAmenityCatalog(data as AmenityItem[]);
       });
   }, []);
+
+  useEffect(() => {
+    setHeaderTravelStyles(searchParams.travelStyles ?? []);
+  }, [searchParams.travelStyles]);
 
   const TAX_RATE = 0.16;
   const nights = useMemo(() => {
@@ -88,7 +96,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
         const t = (hotel.tags || []).join(' ').toLowerCase();
         return /pet|mascota|animal/.test(a) || /pet|mascota|animal/.test(t);
       })();
-      const travelStyles = searchParams.travelStyles ?? [];
+      const travelStyles = headerTravelStyles;
       const hotelStyles = hotel.travel_styles ?? [];
       const matchesTravelStyles = travelStyles.length === 0 || travelStyles.some(s => hotelStyles.includes(s));
       const hotelPlanTypes = (hotel.meal_plans ?? []).map((m) => m.type);
@@ -100,7 +108,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
         );
       return matchesLocation && matchesStars && matchesAmenities && matchesBudget && petOk && matchesTravelStyles && matchesPlans;
     });
-  }, [hotels, searchParams, selectedStars, selectedAmenities, selectedPlans, selectedPetFriendly, nights, rooms]);
+  }, [hotels, searchParams, selectedStars, selectedAmenities, selectedPlans, selectedPetFriendly, headerTravelStyles, nights, rooms]);
 
   // Total menor y mayor encontrado en los resultados (precio × noches × habitaciones + impuestos, sin aplicar filtro de precio)
   const priceBounds = useMemo(() => {
@@ -149,7 +157,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
         return /pet|mascota|animal/.test(a) || /pet|mascota|animal/.test(t);
       })();
 
-      const travelStyles = searchParams.travelStyles ?? [];
+      const travelStyles = headerTravelStyles;
       const hotelStyles = hotel.travel_styles ?? [];
       const matchesTravelStyles = travelStyles.length === 0 || travelStyles.some(s => hotelStyles.includes(s));
 
@@ -163,7 +171,14 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
 
       return matchesLocation && matchesPrice && matchesStars && matchesAmenities && matchesBudget && petOk && matchesTravelStyles && matchesPlans;
     });
-  }, [hotels, searchParams, priceRange, selectedStars, selectedAmenities, selectedPlans, selectedPetFriendly, nights, rooms]);
+  }, [hotels, searchParams, priceRange, selectedStars, selectedAmenities, selectedPlans, selectedPetFriendly, headerTravelStyles, nights, rooms]);
+
+  const sortedHotels = useMemo(() => {
+    if (!priceSort) return filteredHotels;
+    const copy = [...filteredHotels];
+    copy.sort((a, b) => priceSort === 'mayor_precio' ? b.price - a.price : a.price - b.price);
+    return copy;
+  }, [filteredHotels, priceSort]);
 
   const toggleStar = (star: number) => {
     setSelectedStars(prev => prev.includes(star) ? prev.filter(s => s !== star) : [...prev, star]);
@@ -180,6 +195,12 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
       else next.add(cat);
       return next;
     });
+  };
+
+  const toggleHeaderTravelStyle = (style: string) => {
+    setHeaderTravelStyles(prev =>
+      prev.includes(style) ? [] : [style]
+    );
   };
 
   const amenityByCategory = useMemo(() => {
@@ -213,7 +234,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
         const t = (hotel.tags || []).join(' ').toLowerCase();
         return /pet|mascota|animal/.test(a) || /pet|mascota|animal/.test(t);
       })();
-      const travelStyles = searchParams.travelStyles ?? [];
+      const travelStyles = headerTravelStyles;
       const hotelStyles = hotel.travel_styles ?? [];
       const matchesTravelStyles = travelStyles.length === 0 || travelStyles.some(s => hotelStyles.includes(s));
       const hotelPlanTypes = (hotel.meal_plans ?? []).map((m) => m.type);
@@ -221,7 +242,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
       const matchesPlans = selectedPlans.length === 0 || selectedPlans.some((p) => p === 'sin_plan' ? hotelSinPlan : hotelPlanTypes.includes(p));
       return matchesLocation && matchesPrice && matchesStars && matchesBudget && petOk && matchesTravelStyles && matchesPlans;
     });
-  }, [hotels, searchParams, priceRange, selectedStars, selectedPlans, selectedPetFriendly, nights, rooms]);
+  }, [hotels, searchParams, priceRange, selectedStars, selectedPlans, selectedPetFriendly, headerTravelStyles, nights, rooms]);
 
   // Hoteles que cumplen el resto de filtros Y todas las amenidades ya seleccionadas (para que los números se actualicen al elegir)
   const hotelsForAmenityCounts = useMemo(() => {
@@ -421,17 +442,54 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
 
         {/* Results List */}
         <div className="flex-1">
-          <div className="flex flex-wrap justify-between items-center mb-8 gap-4">
-            <h2 className="text-[#111418] dark:text-white text-2xl font-bold leading-tight">{filteredHotels.length} Hoteles encontrados</h2>
+          <div className="mb-8">
+            <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
+              <h2 className="text-[#111418] dark:text-white text-2xl font-bold leading-tight">{filteredHotels.length} Hoteles encontrados</h2>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-[#617289] dark:text-gray-400 uppercase tracking-wider">Estilo de vida:</span>
+                {TRAVEL_STYLE_OPTIONS.map((style) => {
+                  const isSelected = headerTravelStyles.includes(style);
+                  return (
+                    <button
+                      key={style}
+                      type="button"
+                      onClick={() => toggleHeaderTravelStyle(style)}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                        isSelected
+                          ? 'bg-primary text-white border border-primary'
+                          : 'bg-white dark:bg-[#1a2634] border border-[#e5e7eb] dark:border-gray-700 text-[#111418] dark:text-gray-300 hover:border-primary dark:hover:border-primary'
+                      }`}
+                    >
+                      {style}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-2 ml-auto">
+                <label htmlFor="price-sort" className="text-xs font-semibold text-[#617289] dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">Ordenar:</label>
+                <select
+                  id="price-sort"
+                  value={priceSort}
+                  onChange={(e) => setPriceSort((e.target.value as 'mayor_precio' | 'menor_precio' | '') || '')}
+                  className="rounded-lg border border-[#e5e7eb] dark:border-gray-700 bg-white dark:bg-[#1a2634] text-sm font-medium text-[#111418] dark:text-gray-200 px-3 py-1.5 focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                >
+                  <option value="">Sin orden</option>
+                  <option value="mayor_precio">Mayor precio</option>
+                  <option value="menor_precio">Menor precio</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           <div className="space-y-4">
             {loading ? (
                 <div className="text-center py-20">Cargando hoteles...</div>
-            ) : filteredHotels.length === 0 ? (
+            ) : sortedHotels.length === 0 ? (
                 <div className="text-center py-20 bg-white dark:bg-[#1a2634] rounded-xl border border-[#f0f2f4] dark:border-gray-800">No se encontraron hoteles con estos filtros.</div>
             ) : (
-                filteredHotels.map(hotel => {
+                sortedHotels.map(hotel => {
                   const subtotal = hotel.price * nights * (searchParams.guests.rooms || 1);
                   const taxes = Math.round(subtotal * TAX_RATE);
                   const total = subtotal + taxes;
