@@ -10,6 +10,7 @@ export interface Hotel {
   location: string;
   state?: string | null;
   country?: string | null;
+  phone?: string | null;
   price: number;
   rating: number;
   reviews: number;

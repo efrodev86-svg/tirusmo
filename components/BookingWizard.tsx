@@ -1,9 +1,37 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { jsPDF } from 'jspdf';
 import { Hotel, SearchParams, BookingStep, GuestDetails } from '../types';
 import { TermsAndConditions } from './TermsAndConditions';
 import { supabase } from '../lib/supabase';
 
 const STICKY_TOP_PX = 24;
+
+const LADA_COUNTRIES: { code: string; flag: string; name: string }[] = [
+  { code: '+52', flag: '🇲🇽', name: 'México' },
+  { code: '+1', flag: '🇺🇸', name: 'Estados Unidos' },
+  { code: '+34', flag: '🇪🇸', name: 'España' },
+  { code: '+57', flag: '🇨🇴', name: 'Colombia' },
+  { code: '+54', flag: '🇦🇷', name: 'Argentina' },
+  { code: '+56', flag: '🇨🇱', name: 'Chile' },
+  { code: '+51', flag: '🇵🇪', name: 'Perú' },
+  { code: '+58', flag: '🇻🇪', name: 'Venezuela' },
+  { code: '+593', flag: '🇪🇨', name: 'Ecuador' },
+  { code: '+502', flag: '🇬🇹', name: 'Guatemala' },
+  { code: '+53', flag: '🇨🇺', name: 'Cuba' },
+  { code: '+591', flag: '🇧🇴', name: 'Bolivia' },
+  { code: '+506', flag: '🇨🇷', name: 'Costa Rica' },
+  { code: '+507', flag: '🇵🇦', name: 'Panamá' },
+  { code: '+598', flag: '🇺🇾', name: 'Uruguay' },
+  { code: '+595', flag: '🇵🇾', name: 'Paraguay' },
+  { code: '+503', flag: '🇸🇻', name: 'El Salvador' },
+  { code: '+504', flag: '🇭🇳', name: 'Honduras' },
+  { code: '+505', flag: '🇳🇮', name: 'Nicaragua' },
+  { code: '+49', flag: '🇩🇪', name: 'Alemania' },
+  { code: '+33', flag: '🇫🇷', name: 'Francia' },
+  { code: '+39', flag: '🇮🇹', name: 'Italia' },
+  { code: '+44', flag: '🇬🇧', name: 'Reino Unido' },
+  { code: '+55', flag: '🇧🇷', name: 'Brasil' },
+];
 
 type RoomOption = { id: number; name: string; type: string; price: number; image: string; amenities: string[] };
 
@@ -33,6 +61,16 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
   const priceCardRef = useRef<HTMLDivElement>(null);
   const [priceStickyStyle, setPriceStickyStyle] = useState<{ top: number; left: number; width: number } | null>(null);
   const [pricePlaceholderHeight, setPricePlaceholderHeight] = useState<number | null>(null);
+  const [emailError, setEmailError] = useState('');
+  const [phoneError, setPhoneError] = useState('');
+  const [firstNameError, setFirstNameError] = useState('');
+  const [lastNameError, setLastNameError] = useState('');
+  const [formErrorMessage, setFormErrorMessage] = useState('');
+  const [phoneLada, setPhoneLada] = useState('+52');
+  const [ladaOpen, setLadaOpen] = useState(false);
+  const ladaInputRef = useRef<HTMLInputElement>(null);
+  type PaymentMethodType = 'card' | 'paypal' | 'openpay' | 'stripe' | 'transfer';
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodType>('card');
 
   useEffect(() => {
     if (!hotel?.id) return;
@@ -60,6 +98,35 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
       .finally(() => { if (!cancelled) setLoadingRooms(false); });
     return () => { cancelled = true; };
   }, [hotel?.id]);
+
+  // Si la sesión está iniciada, llenar nombre, apellidos y correo al entrar al paso Datos
+  useEffect(() => {
+    if (step !== BookingStep.DETAILS) return;
+    let cancelled = false;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled || !session?.user) return;
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name, email')
+        .eq('id', session.user.id)
+        .maybeSingle();
+      const email = profile?.email ?? session.user.email ?? '';
+      const fullName = (profile?.full_name as string) ?? session.user.user_metadata?.full_name ?? '';
+      const parts = fullName.trim().split(/\s+/).filter(Boolean);
+      const firstName = parts[0] ?? '';
+      const lastName = parts.slice(1).join(' ') ?? '';
+      if (!cancelled && (firstName || lastName || email)) {
+        setGuestDetails((prev) => ({
+          ...prev,
+          firstName: firstName || prev.firstName,
+          lastName: lastName || prev.lastName,
+          email: email || prev.email,
+        }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [step]);
 
   const selectedRoom = hotelRooms.find((r) => r.id === selectedRoomId);
   const roomPrice = selectedRoom?.price ?? hotel.price;
@@ -111,8 +178,52 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
   }, [step, roomPrice, roomTotal, total, nights]);
 
   // Validation
-  const validateGuestDetails = () => {
-    return guestDetails.firstName && guestDetails.lastName && guestDetails.email && guestDetails.phone;
+  const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+  const fullPhoneDigits = () => (phoneLada.replace(/\D/g, '') + (guestDetails.phone || '').replace(/\D/g, ''));
+  const isValidPhone = () => fullPhoneDigits().length >= 10;
+
+  const normalizeLada = (v: string) => (v.trim().startsWith('+') ? v.trim() : '+' + v.trim().replace(/\D/g, ''));
+  const currentLadaCountry = () =>
+    LADA_COUNTRIES.find((c) => c.code === phoneLada) ??
+    LADA_COUNTRIES.find((c) => c.code === normalizeLada(phoneLada)) ??
+    (phoneLada && phoneLada !== '+' ? LADA_COUNTRIES.find((c) => c.code.replace(/\D/g, '').startsWith(phoneLada.replace(/\D/g, ''))) : null);
+  const currentFlag = () => currentLadaCountry()?.flag ?? '🌐';
+
+  const validateGuestDetails = (): boolean => {
+    const { firstName, lastName, email, phone } = guestDetails;
+    setFirstNameError('');
+    setLastNameError('');
+    setEmailError('');
+    setPhoneError('');
+    setFormErrorMessage('');
+    let hasError = false;
+    if (!firstName?.trim()) {
+      setFirstNameError('Campo obligatorio');
+      hasError = true;
+    }
+    if (!lastName?.trim()) {
+      setLastNameError('Campo obligatorio');
+      hasError = true;
+    }
+    if (!email?.trim()) {
+      setEmailError('Correo no válido');
+      hasError = true;
+    } else if (!isValidEmail(email)) {
+      setEmailError('Correo no válido');
+      hasError = true;
+    }
+    if (!phone?.trim()) {
+      setPhoneError('Teléfono no válido');
+      hasError = true;
+    } else if (!isValidPhone()) {
+      setPhoneError('Teléfono no válido');
+      hasError = true;
+    }
+    if (hasError) {
+      setFormErrorMessage('Por favor complete todos los campos obligatorios correctamente.');
+      return false;
+    }
+    return true;
   };
 
   const renderStepIndicator = () => (
@@ -375,59 +486,111 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
       <div className="relative">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           <div className="lg:col-span-8 flex flex-col gap-6">
+              <button
+                  type="button"
+                  onClick={() => setStep(BookingStep.SELECTION)}
+                  className="self-start flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              >
+                  <span className="material-symbols-outlined text-lg">arrow_back</span> Volver
+              </button>
               <div className="bg-white dark:bg-[#1a222d] rounded-xl border border-[#e5e7eb] dark:border-[#2a3441] p-6 shadow-sm">
                   <h3 className="text-lg font-bold mb-6 flex items-center gap-2 pb-2 border-b border-gray-100 dark:border-gray-800">
                       <span className="material-symbols-outlined text-primary">person</span> Información Personal
                   </h3>
+                  {formErrorMessage && (
+                    <div className="mb-4 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 flex items-center gap-2 text-red-700 dark:text-red-300 text-sm">
+                      <span className="material-symbols-outlined text-lg shrink-0">error</span>
+                      {formErrorMessage}
+                    </div>
+                  )}
                   <div className="flex flex-col gap-5">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                           <div className="flex flex-col gap-1.5">
                               <label className="text-sm font-medium text-[#111418] dark:text-gray-300">Nombre(s) *</label>
                               <input 
-                                className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm outline-none focus:border-primary focus:ring-1" 
+                                className={`w-full h-11 rounded-lg border px-4 text-sm outline-none focus:ring-1 ${firstNameError ? 'border-red-500 bg-red-50/50 dark:bg-red-900/10 dark:border-red-500' : 'border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] focus:border-primary'}`}
                                 type="text"
                                 value={guestDetails.firstName}
-                                onChange={(e) => setGuestDetails({...guestDetails, firstName: e.target.value})}
+                                onChange={(e) => { setGuestDetails({...guestDetails, firstName: e.target.value}); setFirstNameError(''); setFormErrorMessage(''); }}
                               />
+                              {firstNameError && <p className="text-sm text-red-600 dark:text-red-400">{firstNameError}</p>}
                           </div>
                           <div className="flex flex-col gap-1.5">
                               <label className="text-sm font-medium text-[#111418] dark:text-gray-300">Apellidos *</label>
                               <input 
-                                className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm outline-none focus:border-primary focus:ring-1" 
+                                className={`w-full h-11 rounded-lg border px-4 text-sm outline-none focus:ring-1 ${lastNameError ? 'border-red-500 bg-red-50/50 dark:bg-red-900/10 dark:border-red-500' : 'border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] focus:border-primary'}`}
                                 type="text"
                                 value={guestDetails.lastName}
-                                onChange={(e) => setGuestDetails({...guestDetails, lastName: e.target.value})}
+                                onChange={(e) => { setGuestDetails({...guestDetails, lastName: e.target.value}); setLastNameError(''); setFormErrorMessage(''); }}
                               />
+                              {lastNameError && <p className="text-sm text-red-600 dark:text-red-400">{lastNameError}</p>}
                           </div>
                       </div>
                       <div className="flex flex-col gap-1.5">
                           <label className="text-sm font-medium text-[#111418] dark:text-gray-300">Correo electrónico *</label>
                           <input 
-                            className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm outline-none focus:border-primary focus:ring-1" 
+                            className={`w-full h-11 rounded-lg border px-4 text-sm outline-none focus:ring-1 ${emailError ? 'border-red-500 bg-red-50/50 dark:bg-red-900/10 dark:border-red-500' : 'border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] focus:border-primary'}`}
                             type="email"
                             value={guestDetails.email}
-                            onChange={(e) => setGuestDetails({...guestDetails, email: e.target.value})}
+                            onChange={(e) => { setGuestDetails({...guestDetails, email: e.target.value}); setEmailError(''); setFormErrorMessage(''); }}
                           />
+                          {emailError && <p className="text-sm text-red-600 dark:text-red-400">{emailError}</p>}
                       </div>
-                      <div className="flex flex-col gap-1.5">
+                      <div className="flex flex-col gap-1.5 relative">
                           <label className="text-sm font-medium text-[#111418] dark:text-gray-300">Teléfono *</label>
-                          <input 
-                            className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm outline-none focus:border-primary focus:ring-1" 
-                            type="tel"
-                            value={guestDetails.phone}
-                            onChange={(e) => setGuestDetails({...guestDetails, phone: e.target.value})}
-                          />
+                          <div className={`flex rounded-lg border overflow-visible ${phoneError ? 'border-red-500 bg-red-50/50 dark:bg-red-900/10' : 'border-[#dbe0e6] dark:border-[#3a4451]'}`}>
+                            <div className="flex items-center bg-gray-100 dark:bg-[#252e3a] border-r border-[#dbe0e6] dark:border-[#3a4451] px-2 min-w-[100px]">
+                              <span className="text-2xl mr-2 select-none" title={currentLadaCountry()?.name}>{currentFlag()}</span>
+                              <input
+                                ref={ladaInputRef}
+                                type="text"
+                                inputMode="numeric"
+                                placeholder="+52"
+                                value={phoneLada}
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  const norm = raw.trim().startsWith('+') ? raw : '+' + raw.replace(/\D/g, '');
+                                  setPhoneLada(norm || '+');
+                                  setPhoneError('');
+                                }}
+                                onFocus={() => setLadaOpen(true)}
+                                onBlur={() => setTimeout(() => setLadaOpen(false), 200)}
+                                className="w-14 bg-transparent text-sm font-medium outline-none text-[#111418] dark:text-white"
+                              />
+                            </div>
+                            {ladaOpen && (
+                              <div className="absolute z-50 mt-11 left-0 right-0 lg:right-auto lg:w-80 max-h-56 overflow-auto bg-white dark:bg-[#1a222d] border border-[#e5e7eb] dark:border-[#2a3441] rounded-lg shadow-lg py-1">
+                                {LADA_COUNTRIES.filter((c) => !phoneLada || phoneLada === '+' || c.code.replace(/\D/g, '').startsWith(phoneLada.replace(/\D/g, ''))).slice(0, 12).map((c) => (
+                                  <button
+                                    key={c.code + c.name}
+                                    type="button"
+                                    onClick={() => { setPhoneLada(c.code); setLadaOpen(false); setPhoneError(''); }}
+                                    className="w-full flex items-center gap-3 px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-[#252e3a]"
+                                  >
+                                    <span className="text-xl">{c.flag}</span>
+                                    <span className="font-medium text-[#111418] dark:text-white">{c.code}</span>
+                                    <span className="text-gray-500 dark:text-gray-400">{c.name}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            <input
+                              className={`flex-1 min-w-0 h-11 px-4 text-sm outline-none focus:ring-1 focus:ring-inset focus:ring-primary bg-white dark:bg-[#101822] text-[#111418] dark:text-white placeholder:text-gray-400 ${phoneError ? 'placeholder-red-300' : ''}`}
+                              type="tel"
+                              inputMode="tel"
+                              placeholder="Ej. 55 1234 5678"
+                              value={guestDetails.phone}
+                              onChange={(e) => { setGuestDetails({ ...guestDetails, phone: e.target.value }); setPhoneError(''); setFormErrorMessage(''); }}
+                            />
+                          </div>
+                          {phoneError && <p className="text-sm text-red-600 dark:text-red-400">{phoneError}</p>}
                       </div>
                   </div>
               </div>
               <div className="flex flex-col-reverse sm:flex-row items-center gap-4 mt-2">
-                  <button onClick={() => setStep(BookingStep.SELECTION)} className="flex w-full sm:w-auto items-center justify-center rounded-xl h-14 px-8 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 text-base font-bold transition-colors">
-                      <span className="material-symbols-outlined mr-2 text-xl">arrow_back</span> Volver
-                  </button>
                   <button 
                     onClick={() => {
                         if (validateGuestDetails()) setStep(BookingStep.PAYMENT);
-                        else alert("Por favor complete todos los campos obligatorios.");
                     }} 
                     className="flex flex-1 w-full items-center justify-center rounded-xl h-14 px-4 bg-primary hover:bg-blue-600 text-white text-lg font-bold shadow-lg shadow-blue-200 dark:shadow-none group transition-all"
                    >
@@ -474,30 +637,186 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
       </div>
   );
 
+  const paymentMethods: { id: PaymentMethodType; label: string; icon: string; shortLabel: string }[] = [
+    { id: 'card', label: 'Tarjeta de crédito o débito', icon: 'credit_card', shortLabel: 'Tarjeta' },
+    { id: 'paypal', label: 'PayPal', icon: 'account_balance_wallet', shortLabel: 'PayPal' },
+    { id: 'openpay', label: 'Open Pay', icon: 'payments', shortLabel: 'Open Pay' },
+    { id: 'stripe', label: 'Stripe', icon: 'payment', shortLabel: 'Stripe' },
+    { id: 'transfer', label: 'Transferencia o depósito bancario', icon: 'account_balance', shortLabel: 'Transferencia' },
+  ];
+
   const renderPaymentStep = () => (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         <div className="lg:col-span-8 flex flex-col gap-6">
+             <button
+                type="button"
+                onClick={() => setStep(BookingStep.DETAILS)}
+                className="self-start flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+             >
+                <span className="material-symbols-outlined text-lg">arrow_back</span> Volver a datos
+             </button>
+
              <div className="bg-white dark:bg-[#1a222d] rounded-xl border border-[#e5e7eb] dark:border-[#2a3441] p-6 shadow-sm">
                 <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary">credit_card</span> Información de Pago
+                    <span className="material-symbols-outlined text-primary">payments</span> Método de pago
                 </h3>
-                {/* Mock Card Form */}
-                <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  {paymentMethods.map((pm) => (
+                    <button
+                      key={pm.id}
+                      type="button"
+                      onClick={() => setPaymentMethod(pm.id)}
+                      className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all text-sm font-medium ${
+                        paymentMethod === pm.id
+                          ? 'border-primary bg-primary/10 text-primary dark:bg-primary/20'
+                          : 'border-[#e5e7eb] dark:border-[#2a3441] text-gray-600 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-2xl">{pm.icon}</span>
+                      <span className="text-center">{pm.shortLabel}</span>
+                    </button>
+                  ))}
+                </div>
+             </div>
+
+             {/* Simulación según método elegido */}
+             <div className="bg-white dark:bg-[#1a222d] rounded-xl border border-[#e5e7eb] dark:border-[#2a3441] p-6 shadow-sm">
+                <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-[#111418] dark:text-white">
+                  {paymentMethod === 'card' && <><span className="material-symbols-outlined text-primary">credit_card</span> Tarjeta de crédito o débito</>}
+                  {paymentMethod === 'paypal' && <><span className="material-symbols-outlined text-primary">account_balance_wallet</span> PayPal</>}
+                  {paymentMethod === 'openpay' && <><span className="material-symbols-outlined text-primary">payments</span> Open Pay</>}
+                  {paymentMethod === 'stripe' && <><span className="material-symbols-outlined text-primary">payment</span> Stripe</>}
+                  {paymentMethod === 'transfer' && <><span className="material-symbols-outlined text-primary">account_balance</span> Transferencia o depósito bancario</>}
+                </h3>
+
+                {paymentMethod === 'card' && (
+                  <div className="flex flex-col gap-4">
                     <div className="flex flex-col gap-1.5">
-                        <label className="text-sm font-medium text-[#111418] dark:text-gray-300">Número de tarjeta</label>
-                        <input className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4" placeholder="0000 0000 0000 0000"/>
+                      <label className="text-sm font-medium text-[#111418] dark:text-gray-300">Número de tarjeta</label>
+                      <input className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm" placeholder="0000 0000 0000 0000" type="text" inputMode="numeric" maxLength={19} />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-medium text-[#111418] dark:text-gray-300">Nombre como aparece en la tarjeta</label>
+                      <input className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm" placeholder="JUAN PÉREZ" type="text" />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-sm font-medium">Expira</label>
-                            <input className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4" placeholder="MM/YY"/>
-                        </div>
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-sm font-medium">CVV</label>
-                            <input className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4" placeholder="123"/>
-                        </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-sm font-medium text-[#111418] dark:text-gray-300">Fecha de vencimiento</label>
+                        <input className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm" placeholder="MM/AA" type="text" maxLength={5} />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-sm font-medium text-[#111418] dark:text-gray-300">CVV</label>
+                        <input className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm" placeholder="123" type="text" inputMode="numeric" maxLength={4} />
+                      </div>
                     </div>
-                </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">El CVV son los 3 o 4 dígitos en el reverso de tu tarjeta.</p>
+                  </div>
+                )}
+
+                {paymentMethod === 'paypal' && (
+                  <div className="flex flex-col gap-4">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Serás redirigido a PayPal para completar el pago de forma segura.</p>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-medium text-[#111418] dark:text-gray-300">Correo de tu cuenta PayPal</label>
+                      <input className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm" placeholder="tu@email.com" type="email" />
+                    </div>
+                    <button type="button" className="flex items-center justify-center gap-2 w-full h-12 rounded-xl border-2 border-[#003087] bg-[#003087] text-white font-bold text-sm hover:bg-[#004c8c] transition-colors">
+                      <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M7.076 21.337H2.47a.641.641 0 0 1-.633-.74L4.944 3.72a.77.77 0 0 1 .76-.646h6.227c2.02 0 3.597.563 4.655 1.688 1.008 1.068 1.47 2.456 1.47 4.156 0 1.628-.405 2.994-1.21 4.19-.765 1.13-1.89 1.97-3.355 2.51l-1.87 5.54a.642.642 0 0 1-.633.499z"/></svg>
+                      Iniciar sesión en PayPal
+                    </button>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Simulación: no se realizará ningún cargo real.</p>
+                  </div>
+                )}
+
+                {paymentMethod === 'openpay' && (
+                  <div className="flex flex-col gap-4">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Paga con tarjeta o SPEI a través de Open Pay.</p>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-medium text-[#111418] dark:text-gray-300">Número de tarjeta Open Pay</label>
+                      <input className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm" placeholder="0000 0000 0000 0000" type="text" inputMode="numeric" />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-medium text-[#111418] dark:text-gray-300">Nombre del titular</label>
+                      <input className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm" placeholder="Nombre en la tarjeta" type="text" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-sm font-medium text-[#111418] dark:text-gray-300">Vencimiento</label>
+                        <input className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm" placeholder="MM/AA" type="text" maxLength={5} />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-sm font-medium text-[#111418] dark:text-gray-300">CVV</label>
+                        <input className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm" placeholder="***" type="text" inputMode="numeric" maxLength={4} />
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">O paga con SPEI (transferencia)</p>
+                      <button type="button" className="w-full h-11 rounded-lg border-2 border-[#c41e3a] text-[#c41e3a] font-bold text-sm hover:bg-[#c41e3a]/10 transition-colors">Generar referencia SPEI</button>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Simulación: no se realizará ningún cargo real.</p>
+                  </div>
+                )}
+
+                {paymentMethod === 'stripe' && (
+                  <div className="flex flex-col gap-4">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Pago seguro procesado por Stripe.</p>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-medium text-[#111418] dark:text-gray-300">Número de tarjeta</label>
+                      <input className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm" placeholder="4242 4242 4242 4242" type="text" inputMode="numeric" />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-medium text-[#111418] dark:text-gray-300">Nombre en la tarjeta</label>
+                      <input className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm" placeholder="Nombre completo" type="text" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-sm font-medium text-[#111418] dark:text-gray-300">MM / AA</label>
+                        <input className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm" placeholder="12/34" type="text" maxLength={5} />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-sm font-medium text-[#111418] dark:text-gray-300">CVC</label>
+                        <input className="w-full h-11 rounded-lg border border-[#dbe0e6] dark:border-[#3a4451] bg-white dark:bg-[#101822] px-4 text-sm" placeholder="123" type="text" inputMode="numeric" maxLength={4} />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                      <span className="material-symbols-outlined text-base">lock</span>
+                      Pago cifrado con Stripe. Usa 4242 4242 4242 4242 para pruebas.
+                    </div>
+                  </div>
+                )}
+
+                {paymentMethod === 'transfer' && (
+                  <div className="flex flex-col gap-4">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Realiza el pago por transferencia o depósito y envía tu comprobante. La reserva se confirmará al verificar el pago.</p>
+                    <div className="p-4 rounded-xl bg-gray-50 dark:bg-[#252e3a] border border-gray-200 dark:border-[#2a3441] space-y-3">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500 dark:text-gray-400">Banco</span>
+                        <span className="font-medium text-[#111418] dark:text-white">Banco Ejemplo S.A.</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500 dark:text-gray-400">CLABE</span>
+                        <span className="font-mono font-medium text-[#111418] dark:text-white">012 180 012345678901 2</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500 dark:text-gray-400">Número de cuenta</span>
+                        <span className="font-mono font-medium text-[#111418] dark:text-white">0123 4567 8901 2345</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500 dark:text-gray-400">Beneficiario</span>
+                        <span className="font-medium text-[#111418] dark:text-white">Tirusmo Reservas S. de R.L.</span>
+                      </div>
+                      <div className="flex justify-between text-sm pt-2 border-t border-gray-200 dark:border-[#2a3441]">
+                        <span className="text-gray-500 dark:text-gray-400">Referencia (importante)</span>
+                        <span className="font-mono font-bold text-primary">RES-ABC12XYZ</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500 dark:text-gray-400">Monto a transferir</span>
+                        <span className="text-lg font-black text-primary">${total.toFixed(2)}</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Incluye la referencia en el concepto de tu transferencia. Después de pagar, envía tu comprobante al correo que te indicaremos para confirmar tu reserva.</p>
+                  </div>
+                )}
              </div>
 
              {/* Terms and Conditions Checkbox */}
@@ -538,42 +857,289 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
       </div>
   );
 
-  const renderConfirmationStep = () => (
+  const confirmationNumberRef = useRef<string | null>(null);
+  const getConfirmationNumber = () => {
+    if (!confirmationNumberRef.current) confirmationNumberRef.current = `SJ-${Date.now().toString(36).toUpperCase().slice(-8)}`;
+    return confirmationNumberRef.current;
+  };
+
+  const downloadReservationPdf = () => {
+    const mealPlanLabel = selectedMealPlan === 'desayuno' ? 'Desayuno' : selectedMealPlan === 'todo_incluido' ? 'Todo incluido' : selectedMealPlan === 'sin_plan' ? 'Sin plan de alimentos' : 'Sin plan';
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const margin = 20;
+    let y = margin;
+    const lineHeight = 6;
+    const sectionGap = 4;
+
+    const addTitle = (text: string, size = 14) => {
+      doc.setFontSize(size);
+      doc.setFont('helvetica', 'bold');
+      doc.text(text, margin, y);
+      y += lineHeight + 2;
+    };
+    const addLine = (label: string, value: string) => {
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(label, margin, y);
+      doc.text(value, margin + 80, y);
+      y += lineHeight;
+    };
+    const addSection = (title: string) => {
+      y += sectionGap;
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(80, 80, 80);
+      doc.text(title, margin, y);
+      y += lineHeight + 2;
+      doc.setTextColor(0, 0, 0);
+    };
+
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Reserva confirmada', margin, y);
+    y += lineHeight + 4;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Número de confirmación: #${getConfirmationNumber()}`, margin, y);
+    y += lineHeight + sectionGap;
+
+    addSection('LUGAR');
+    addLine('Hotel:', hotel.name);
+    addLine('Ubicación:', [hotel.location, hotel.state, hotel.country].filter(Boolean).join(', '));
+    if (hotel.phone) addLine('Teléfono:', hotel.phone);
+
+    addSection('FECHAS');
+    addLine('Check-in:', `${searchParams.checkIn} - 15:00 hrs`);
+    addLine('Check-out:', `${searchParams.checkOut} - 12:00 hrs`);
+    addLine('Noches:', String(nights));
+
+    addSection('HUÉSPEDES');
+    addLine('Titular:', `${guestDetails.firstName} ${guestDetails.lastName}`);
+    addLine('Correo:', guestDetails.email);
+    if (guestDetails.phone) addLine('Teléfono:', `${phoneLada} ${guestDetails.phone}`);
+    addLine('Personas:', `${searchParams.guests.adults} adulto(s)${searchParams.guests.children > 0 ? `, ${searchParams.guests.children} niño(s)` : ''} · ${searchParams.guests.rooms} habitación(es)`);
+
+    addSection('HABITACIÓN');
+    addLine('Tipo:', selectedRoom?.name ?? 'Habitación estándar');
+    if (selectedRoom?.type) addLine('Categoría:', selectedRoom.type);
+    addLine('Precio/noche:', `$${roomPrice.toFixed(2)}`);
+    if (selectedRoom?.amenities?.length) addLine('Amenidades:', selectedRoom.amenities.join(', '));
+
+    addSection('PLAN DE ALIMENTACIÓN');
+    addLine('Plan:', mealPlanLabel);
+    addLine('Costo plan:', mealPlanTotalForStay > 0 ? `$${mealPlanTotalForStay.toFixed(2)}` : 'Incluido');
+
+    addSection('PRECIO PAGADO');
+    addLine(`${nights} noches x $${roomPrice.toFixed(2)}`, `$${roomTotal.toFixed(2)}`);
+    if (mealPlanTotalForStay > 0) addLine('Plan de alimentos', `$${mealPlanTotalForStay.toFixed(2)}`);
+    addLine('Impuestos (12%)', `$${taxes.toFixed(2)}`);
+    addLine('Tarifa de servicio', `$${service.toFixed(2)}`);
+    doc.setFont('helvetica', 'bold');
+    addLine('Total pagado', `$${total.toFixed(2)}`);
+
+    if (guestDetails.specialRequests?.trim()) {
+      addSection('SOLICITUDES ESPECIALES');
+      doc.setFont('helvetica', 'normal');
+      const split = doc.splitTextToSize(guestDetails.specialRequests, 170);
+      doc.text(split, margin, y);
+      y += split.length * lineHeight;
+    }
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    y = Math.max(y + 10, 270);
+    doc.text('Guarde este PDF como comprobante de su reserva.', margin, y);
+    doc.text(`Confirmación #${getConfirmationNumber()} · ${hotel.name}`, margin, y + 5);
+
+    doc.save(`reserva-${getConfirmationNumber()}.pdf`);
+  };
+
+  const renderConfirmationStep = () => {
+    const mealPlanLabel = selectedMealPlan === 'desayuno' ? 'Desayuno' : selectedMealPlan === 'todo_incluido' ? 'Todo incluido' : selectedMealPlan === 'sin_plan' ? 'Sin plan de alimentos' : 'Sin plan';
+    return (
       <div className="flex flex-col items-center w-full max-w-3xl mx-auto py-10">
           <div className="w-24 h-24 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-6 shadow-sm border-4 border-white dark:border-[#101822]">
             <span className="material-symbols-outlined text-6xl text-green-600 dark:text-green-500 filled">check</span>
           </div>
           <h1 className="text-3xl font-black mb-2 text-center text-[#111418] dark:text-white">¡Reserva Confirmada!</h1>
-          <p className="text-gray-500 mb-10 text-center">Hemos enviado los detalles a {guestDetails.email}</p>
-          
-          <div className="bg-white dark:bg-[#1a222d] w-full rounded-2xl border border-[#e5e7eb] dark:border-[#2a3441] shadow-xl overflow-hidden mb-10">
-            <div className="bg-gray-50 dark:bg-[#252e3a] px-8 py-5 border-b border-[#e5e7eb] dark:border-[#2a3441] flex justify-between items-center">
-                <span className="text-sm font-bold uppercase tracking-wider text-gray-500">Confirmación</span>
-                <span className="text-xl font-mono font-bold">#SJ-{Math.floor(Math.random()*10000)}</span>
+          <p className="text-gray-500 mb-8 text-center">Hemos enviado los detalles a <strong className="text-[#111418] dark:text-white">{guestDetails.email}</strong></p>
+
+          <div className="bg-white dark:bg-[#1a222d] w-full rounded-2xl border border-[#e5e7eb] dark:border-[#2a3441] shadow-xl overflow-hidden mb-6">
+            <div className="bg-gray-50 dark:bg-[#252e3a] px-6 py-4 border-b border-[#e5e7eb] dark:border-[#2a3441] flex justify-between items-center flex-wrap gap-2">
+                <span className="text-sm font-bold uppercase tracking-wider text-gray-500">Número de confirmación</span>
+                <span className="text-xl font-mono font-bold text-primary">#{getConfirmationNumber()}</span>
             </div>
-            <div className="p-8">
-                <h2 className="text-xl font-bold mb-2">{hotel.name}</h2>
-                <div className="flex items-center gap-1 text-sm text-gray-500 mb-6">
-                    <span className="material-symbols-outlined text-sm filled text-red-500">location_on</span> {hotel.location}
-                </div>
-                <div className="grid grid-cols-2 gap-6 p-4 bg-background-light dark:bg-[#101822] rounded-xl border border-gray-100 dark:border-[#2a3441]">
+            <div className="p-6 space-y-6">
+                {/* Lugar */}
+                <section>
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-lg">apartment</span> Lugar
+                  </h3>
+                  <div className="flex gap-4">
+                    {hotel.image && (
+                      <img src={hotel.image} alt={hotel.name} className="w-24 h-24 object-cover rounded-xl shrink-0" />
+                    )}
                     <div>
-                        <p className="text-xs text-gray-400 font-bold uppercase mb-1">Check-in</p>
-                        <p className="font-bold">{searchParams.checkIn}</p>
+                      <h2 className="text-xl font-bold text-[#111418] dark:text-white">{hotel.name}</h2>
+                      <p className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        <span className="material-symbols-outlined text-sm filled text-red-500">location_on</span>
+                        {hotel.location}
+                        {hotel.state && `, ${hotel.state}`}
+                        {hotel.country && `, ${hotel.country}`}
+                      </p>
+                      {hotel.phone && (
+                        <p className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 mt-1">
+                          <span className="material-symbols-outlined text-sm">phone</span>
+                          {hotel.phone}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </section>
+
+                {/* Fechas */}
+                <section>
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-lg">calendar_today</span> Fechas
+                  </h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4 bg-gray-50 dark:bg-[#101822] rounded-xl border border-gray-100 dark:border-[#2a3441]">
+                    <div>
+                      <p className="text-xs text-gray-400 font-medium mb-0.5">Check-in</p>
+                      <p className="font-bold text-[#111418] dark:text-white">{searchParams.checkIn}</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">15:00 hrs</p>
                     </div>
                     <div>
-                        <p className="text-xs text-gray-400 font-bold uppercase mb-1">Check-out</p>
-                        <p className="font-bold">{searchParams.checkOut}</p>
+                      <p className="text-xs text-gray-400 font-medium mb-0.5">Check-out</p>
+                      <p className="font-bold text-[#111418] dark:text-white">{searchParams.checkOut}</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">12:00 hrs</p>
                     </div>
-                </div>
+                    <div>
+                      <p className="text-xs text-gray-400 font-medium mb-0.5">Noches</p>
+                      <p className="font-bold text-[#111418] dark:text-white">{nights}</p>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Huéspedes */}
+                <section>
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-lg">group</span> Huéspedes
+                  </h3>
+                  <div className="p-4 bg-gray-50 dark:bg-[#101822] rounded-xl border border-gray-100 dark:border-[#2a3441] space-y-2">
+                    <p className="text-[#111418] dark:text-white font-medium">
+                      {searchParams.guests.adults} adulto{searchParams.guests.adults !== 1 ? 's' : ''}
+                      {searchParams.guests.children > 0 && `, ${searchParams.guests.children} niño${searchParams.guests.children !== 1 ? 's' : ''}`}
+                      {searchParams.guests.rooms > 0 && ` · ${searchParams.guests.rooms} habitación${searchParams.guests.rooms !== 1 ? 'es' : ''}`}
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      <span className="font-medium text-[#111418] dark:text-white">{guestDetails.firstName} {guestDetails.lastName}</span>
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{guestDetails.email}</p>
+                    {guestDetails.phone && (
+                      <p className="text-sm text-gray-600 dark:text-gray-400">{phoneLada} {guestDetails.phone}</p>
+                    )}
+                  </div>
+                </section>
+
+                {/* Habitación */}
+                <section>
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-lg">bed</span> Habitación
+                  </h3>
+                  <div className="p-4 bg-gray-50 dark:bg-[#101822] rounded-xl border border-gray-100 dark:border-[#2a3441]">
+                    <p className="font-bold text-[#111418] dark:text-white">{selectedRoom?.name ?? 'Habitación estándar'}</p>
+                    {selectedRoom?.type && <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">Tipo: {selectedRoom.type}</p>}
+                    <p className="text-sm text-primary font-semibold mt-1">${roomPrice.toFixed(2)} por noche</p>
+                    {selectedRoom?.amenities && selectedRoom.amenities.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-200 dark:border-[#2a3441]">
+                        <p className="text-xs text-gray-400 font-medium mb-1.5">Amenidades</p>
+                        <ul className="flex flex-wrap gap-2">
+                          {selectedRoom.amenities.map((a, i) => (
+                            <li key={i} className="text-xs px-2 py-1 bg-white dark:bg-[#1a222d] rounded-md border border-gray-200 dark:border-[#2a3441] text-gray-700 dark:text-gray-300">{a}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                {/* Plan de alimentación */}
+                <section>
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-lg">restaurant</span> Plan de alimentación
+                  </h3>
+                  <div className="p-4 bg-gray-50 dark:bg-[#101822] rounded-xl border border-gray-100 dark:border-[#2a3441] flex justify-between items-center flex-wrap gap-2">
+                    <p className="font-medium text-[#111418] dark:text-white">{mealPlanLabel}</p>
+                    {mealPlanTotalForStay > 0 ? (
+                      <p className="text-sm text-primary font-semibold">${mealPlanTotalForStay.toFixed(2)} ({nights} noches)</p>
+                    ) : (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">Incluido en la tarifa</p>
+                    )}
+                  </div>
+                </section>
+
+                {/* Desglose de precio pagado */}
+                <section>
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-lg">receipt_long</span> Precio pagado
+                  </h3>
+                  <div className="p-4 bg-gray-50 dark:bg-[#101822] rounded-xl border border-gray-100 dark:border-[#2a3441] space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600 dark:text-gray-400">{nights} noches x ${roomPrice.toFixed(2)}</span>
+                      <span className="font-medium text-[#111418] dark:text-white">${roomTotal.toFixed(2)}</span>
+                    </div>
+                    {mealPlanTotalForStay > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600 dark:text-gray-400">Plan de alimentos</span>
+                        <span className="font-medium text-[#111418] dark:text-white">${mealPlanTotalForStay.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600 dark:text-gray-400">Impuestos (12%)</span>
+                      <span className="font-medium text-[#111418] dark:text-white">${taxes.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600 dark:text-gray-400">Tarifa de servicio</span>
+                      <span className="font-medium text-[#111418] dark:text-white">${service.toFixed(2)}</span>
+                    </div>
+                    <div className="h-px bg-gray-200 dark:bg-[#2a3441] my-2" />
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-[#111418] dark:text-white">Total pagado</span>
+                      <span className="text-2xl font-black text-primary">${total.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </section>
+
+                {guestDetails.specialRequests?.trim() && (
+                  <section>
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-lg">notes</span> Solicitudes especiales
+                    </h3>
+                    <p className="p-4 bg-gray-50 dark:bg-[#101822] rounded-xl border border-gray-100 dark:border-[#2a3441] text-sm text-[#111418] dark:text-gray-300">{guestDetails.specialRequests}</p>
+                  </section>
+                )}
             </div>
           </div>
-          
-          <button onClick={onBack} className="bg-gray-100 dark:bg-gray-800 px-6 py-3 rounded-xl font-bold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-            Volver al Inicio
-          </button>
+
+          <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-6">Guarda este número de confirmación <strong className="text-[#111418] dark:text-white">#{getConfirmationNumber()}</strong> para cualquier consulta.</p>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={downloadReservationPdf}
+              className="flex items-center justify-center gap-2 bg-primary hover:bg-blue-600 text-white font-bold px-6 py-3 rounded-xl transition-colors shadow-lg shadow-blue-200 dark:shadow-none"
+            >
+              <span className="material-symbols-outlined text-xl">download</span>
+              Descargar PDF
+            </button>
+            <button onClick={onBack} className="flex items-center justify-center gap-2 bg-gray-100 dark:bg-gray-800 px-6 py-3 rounded-xl font-bold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+              Volver al Inicio
+            </button>
+          </div>
       </div>
-  );
+    );
+  };
 
   return (
     <div className="w-full flex-1 py-8 px-4 md:px-10 lg:px-40 relative">
