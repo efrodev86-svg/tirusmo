@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
 interface CustomerStayTrackingProps {
   reservationId: string;
@@ -6,19 +7,98 @@ interface CustomerStayTrackingProps {
   onBilling?: () => void;
 }
 
+async function geocodeAddress(address: string): Promise<{ lat: number; lon: number } | null> {
+  if (!address.trim()) return null;
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?${new URLSearchParams({
+        q: address.trim(),
+        format: 'json',
+        limit: '1',
+      })}`,
+      { headers: { 'Accept-Language': 'es', 'User-Agent': 'escapar-mx-hotel-app/1.0' } }
+    );
+    const data = await res.json();
+    const first = Array.isArray(data) && data[0];
+    if (first?.lat != null && first?.lon != null) return { lat: Number(first.lat), lon: Number(first.lon) };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export const CustomerStayTracking: React.FC<CustomerStayTrackingProps> = ({ reservationId, onBack, onBilling }) => {
-  // Mock Data matching the design
-  const reservation = {
-    id: "#ST-98231",
-    hotelName: "StayTrack Hotel & Spa", 
-    roomName: "Suite Deluxe – Vista al Mar",
-    image: "https://images.unsplash.com/photo-1582719508461-905c673771fd?q=80&w=600&auto=format&fit=crop",
-    checkIn: "12 Oct, 15:00",
-    checkOut: "15 Oct, 11:00",
-    guests: "2 Adultos",
-    amenities: ["Wi-Fi Gratis", "Desayuno incluido", "Cama King"],
-    address: "Paseo de la Reforma 450, Cuauhtémoc, 06600 Ciudad de México, CDMX"
-  };
+  const [reservation, setReservation] = useState<{
+    id: string;
+    hotelName: string;
+    roomName: string;
+    image: string;
+    checkIn: string;
+    checkOut: string;
+    guests: string;
+    roomsCount: number;
+    amenities: string[];
+    address: string;
+    /** Campo location del hotel (ubicación/dirección) */
+    location: string;
+    /** Teléfono de contacto del hotel */
+    hotelPhone: string | null;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [mapCoords, setMapCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const [mapLoading, setMapLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('reservations')
+        .select('id, check_in, check_out, guests, data, hotels(name, location, image, phone), rooms(name, amenities)')
+        .eq('id', reservationId)
+        .single();
+      if (cancelled) return;
+      if (error || !data) {
+        setReservation(null);
+        setLoading(false);
+        return;
+      }
+      const r = data as Record<string, unknown>;
+      const hotel = r.hotels as { name?: string; location?: string; image?: string; phone?: string } | null;
+      const room = r.rooms as { name?: string; amenities?: string[] } | null;
+      const checkIn = r.check_in ? new Date(String(r.check_in)) : null;
+      const checkOut = r.check_out ? new Date(String(r.check_out)) : null;
+      const guestsNum = Number(r.guests ?? 1);
+      const reservationData = (r.data as { rooms?: number } | null) || {};
+      const roomsCount = Math.max(1, Number(reservationData.rooms) || 1);
+      const location = (hotel?.location && String(hotel.location).trim()) || '';
+      const address = location || 'Sin dirección';
+      setReservation({
+        id: String(r.id).slice(0, 8).toUpperCase(),
+        hotelName: hotel?.name || 'Hotel',
+        roomName: room?.name || 'Habitación',
+        image: hotel?.image || 'https://images.unsplash.com/photo-1582719508461-905c673771fd?q=80&w=600&auto=format&fit=crop',
+        checkIn: checkIn ? `${checkIn.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}, 15:00` : '—',
+        checkOut: checkOut ? `${checkOut.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}, 12:00` : '—',
+        guests: `${guestsNum} adulto(s)`,
+        roomsCount,
+        amenities: Array.isArray(room?.amenities) ? room.amenities : ['Wi-Fi', 'Clima'],
+        address,
+        location: location || '—',
+        hotelPhone: hotel?.phone && String(hotel.phone).trim() ? String(hotel.phone).trim() : null,
+      });
+      setLoading(false);
+      if (address && address !== 'Sin dirección') {
+        setMapLoading(true);
+        const coords = await geocodeAddress(address);
+        if (!cancelled) {
+          setMapCoords(coords);
+          setMapLoading(false);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [reservationId]);
 
   const timeline = [
     { title: "Reserva Confirmada", desc: "¡Tu lugar está asegurado!", status: "completed", icon: "check_circle" },
@@ -28,6 +108,36 @@ export const CustomerStayTracking: React.FC<CustomerStayTrackingProps> = ({ rese
     { title: "En el Hotel", desc: "Comparte tu experiencia con nosotros", status: "pending", icon: "camera_alt" },
     { title: "Checkout", desc: "Procesa tu salida y factura", status: "pending", icon: "receipt_long" },
   ];
+
+  if (loading || !reservation) {
+    return (
+      <div className="flex flex-col gap-8 animate-in fade-in zoom-in-95 duration-300">
+        <button onClick={onBack} className="text-gray-500 hover:text-[#111827] flex items-center gap-2 mb-4 font-medium transition-colors">
+          <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+          Volver a mis reservas
+        </button>
+        <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
+          {loading ? (
+            <>
+              <span className="material-symbols-outlined text-4xl text-gray-300 animate-pulse">hourglass_empty</span>
+              <p className="text-gray-500 mt-2">Cargando reserva…</p>
+            </>
+          ) : (
+            <>
+              <span className="material-symbols-outlined text-4xl text-gray-300">error_outline</span>
+              <p className="text-gray-500 mt-2">No se encontró la reserva.</p>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const mapsQuery = encodeURIComponent(reservation.address);
+  const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`;
+  const osmEmbedUrl = mapCoords
+    ? `https://www.openstreetmap.org/export/embed.html?bbox=${mapCoords.lon - 0.02},${mapCoords.lat - 0.02},${mapCoords.lon + 0.02},${mapCoords.lat + 0.02}&layer=mapnik&marker=${mapCoords.lat},${mapCoords.lon}`
+    : null;
 
   return (
     <div className="flex flex-col gap-8 animate-in fade-in zoom-in-95 duration-300">
@@ -151,6 +261,10 @@ export const CustomerStayTracking: React.FC<CustomerStayTrackingProps> = ({ rese
                             <span className="text-gray-500">Huéspedes</span>
                             <span className="font-bold text-[#111827]">{reservation.guests}</span>
                         </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Número de habitaciones</span>
+                            <span className="font-bold text-[#111827]">{reservation.roomsCount}</span>
+                        </div>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -163,27 +277,65 @@ export const CustomerStayTracking: React.FC<CustomerStayTrackingProps> = ({ rese
                 </div>
             </div>
 
-            {/* Location */}
+            {/* Location + Map */}
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+                <p className="text-lg font-bold text-[#111827] mb-1">{reservation.hotelName}</p>
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-[#111827] leading-tight w-24">Ubicación del Hotel</h3>
-                    <button className="text-[#3B82F6] text-xs font-bold flex items-center gap-1 hover:underline">
+                    <h3 className="font-bold text-[#111827] leading-tight text-sm">Ubicación del Hotel</h3>
+                    <a
+                        href={googleMapsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#3B82F6] text-xs font-bold flex items-center gap-1 hover:underline"
+                    >
                         <span className="material-symbols-outlined text-[16px] filled">directions</span> Indicaciones
-                    </button>
+                    </a>
                 </div>
-                <div className="h-40 bg-gray-100 rounded-xl mb-4 relative overflow-hidden">
-                     {/* Placeholder for Map */}
-                     <img src="https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=600&auto=format&fit=crop" className="w-full h-full object-cover opacity-50" />
-                     <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="bg-white px-3 py-1.5 rounded-lg shadow-md flex items-center gap-2">
-                            <span className="material-symbols-outlined text-[#3B82F6] filled">location_on</span>
-                            <span className="text-xs font-bold">StayTrack Hotel</span>
+                <div className="h-48 rounded-xl mb-4 overflow-hidden border border-gray-100 bg-gray-100">
+                    {mapLoading ? (
+                        <div className="w-full h-full flex items-center justify-center">
+                            <span className="material-symbols-outlined text-gray-400 animate-pulse">map</span>
+                            <span className="text-sm text-gray-500 ml-2">Cargando mapa…</span>
                         </div>
-                     </div>
+                    ) : osmEmbedUrl ? (
+                        <iframe
+                            title="Mapa del hotel"
+                            src={osmEmbedUrl}
+                            className="w-full h-full border-0"
+                            allowFullScreen
+                            loading="lazy"
+                            referrerPolicy="no-referrer-when-downgrade"
+                        />
+                    ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-gray-500">
+                            <span className="material-symbols-outlined text-[40px]">location_on</span>
+                            <span className="text-sm mt-1">{reservation.hotelName}</span>
+                            <a href={googleMapsUrl} target="_blank" rel="noopener noreferrer" className="text-[#3B82F6] text-xs font-bold mt-2 hover:underline">
+                                Ver en Google Maps
+                            </a>
+                        </div>
+                    )}
                 </div>
-                <p className="text-xs text-gray-500 leading-relaxed">
-                    {reservation.address}
-                </p>
+                <div className="space-y-3">
+                    <div>
+                        <p className="text-[10px] font-bold uppercase text-gray-400 mb-1">Ubicación</p>
+                        <p className="text-sm text-[#111827] leading-relaxed flex items-start gap-2">
+                            <span className="material-symbols-outlined text-[#111827] mt-0.5 filled shrink-0">location_on</span>
+                            {reservation.location}
+                        </p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-bold uppercase text-gray-400 mb-1">Teléfono de Contacto</p>
+                        {reservation.hotelPhone ? (
+                            <a href={`tel:${reservation.hotelPhone.replace(/\D/g, '')}`} className="text-sm font-medium text-[#3B82F6] hover:underline flex items-center gap-2">
+                                <span className="material-symbols-outlined text-[18px]">phone</span>
+                                {reservation.hotelPhone}
+                            </a>
+                        ) : (
+                            <p className="text-sm text-gray-500">—</p>
+                        )}
+                    </div>
+                </div>
             </div>
 
             {/* Support */}

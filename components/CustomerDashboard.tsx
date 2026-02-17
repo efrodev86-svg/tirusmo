@@ -17,11 +17,36 @@ interface UserProfile {
   email: string;
 }
 
+interface UserReservationCard {
+  id: string;
+  hotelName: string;
+  dates: string;
+  details: string;
+  total: string;
+  status: string;
+  statusRaw: string;
+  image: string;
+}
+
+function formatDateRange(checkIn: string | null, checkOut: string | null): string {
+  if (!checkIn || !checkOut) return '—';
+  const d1 = new Date(checkIn);
+  const d2 = new Date(checkOut);
+  return `${d1.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })} - ${d2.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+}
+
+function formatCurrency(n: number): string {
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n);
+}
+
 export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onLogout, onNewReservation }) => {
   const [activeTab, setActiveTab] = useState<TabState>('active');
   const [viewState, setViewState] = useState<ViewState>('list');
   const [selectedTrackingId, setSelectedTrackingId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [reservations, setReservations] = useState<UserReservationCard[]>([]);
+  const [reservationsLoading, setReservationsLoading] = useState(true);
+  const [reservationsError, setReservationsError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +62,56 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onLogout, 
       }
     }
     load();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadReservations() {
+      setReservationsLoading(true);
+      setReservationsError(null);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (cancelled || !user) {
+        setReservationsLoading(false);
+        return;
+      }
+      const { data, error } = await supabase
+        .from('reservations')
+        .select('id, check_in, check_out, total, status, guests, hotels(name, image), rooms(name)')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      if (cancelled) return;
+      if (error) {
+        setReservationsError(error.message || 'Error al cargar reservas');
+        setReservations([]);
+        setReservationsLoading(false);
+        return;
+      }
+      const list = (data || []) as Record<string, unknown>[];
+      const cards: UserReservationCard[] = list.map((r) => {
+        const hotel = r.hotels as { name?: string; image?: string } | null;
+        const room = r.rooms as { name?: string } | null;
+        const checkIn = String(r.check_in ?? '');
+        const checkOut = String(r.check_out ?? '');
+        const guests = Number(r.guests ?? 1);
+        const hotelName = hotel?.name || room?.name || 'Hotel';
+        const details = `${guests} adulto(s) • ${room?.name || 'Habitación'}`;
+        const statusLabel = r.status === 'PENDIENTE' ? 'Pendiente' : r.status === 'CONFIRMADA' ? 'Confirmada' : r.status === 'CHECKOUT' ? 'Finalizada' : 'Cancelada';
+        return {
+          id: String(r.id),
+          hotelName,
+          dates: formatDateRange(checkIn || null, checkOut || null),
+          details,
+          total: formatCurrency(Number(r.total ?? 0)),
+          status: statusLabel,
+          statusRaw: String(r.status || 'PENDIENTE'),
+          image: hotel?.image || 'https://images.unsplash.com/photo-1566073771259-6a0e4e6c97a0?w=600',
+        };
+      });
+      setReservations(cards);
+      setReservationsLoading(false);
+    }
+    loadReservations();
     return () => { cancelled = true; };
   }, []);
 
@@ -67,32 +142,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onLogout, 
       window.scrollTo(0, 0);
   };
 
-  const reservations = [
-    {
-      id: "SH-9921",
-      hotelName: "Royal Garden Spa & Resort",
-      dates: "15 Nov - 20 Nov, 2023",
-      details: "2 Adultos • Hab. Deluxe",
-      total: "$1,250.00",
-      status: "EN ESTANCIA",
-      progress: 65, // Percentage
-      progressLabel: "Etapa: Estancia - Día 3 de 5",
-      image: "https://lh3.googleusercontent.com/aida-public/AB6AXuAJ1ZNXVStktOZCO_PP_dagtfcrFa68yllscTGsfwRIzdrs2nif74E3NrR2D9Ku-rbPCCSCJJxxQkT2KPSrIKnfGQ69Y_SdVL9tZ_RfN8oDQAhM-aNomuw0UcjWEdv3tRQIqGkv8v8NTSZjnKAvvADiPhUOm_XjHzLf8zV7GO9OsBzaIdez-qXUZO7wSHJzBozNYH0fkZqIuoAih4YZWXescIyEVUJpUwKUAe0aXrfGSns6mG4yot10pKoCPs_bFL9VG9W1LtUHEA",
-      actions: ["Ver Seguimiento", "Ver Detalles", "Solicitud Especial"]
-    },
-    {
-      id: "SH-4412",
-      hotelName: "Ocean Breeze Resort & Spa",
-      dates: "12 Dic - 15 Dic, 2023",
-      details: "1 Adulto • Suite Jr.",
-      total: "$840.00",
-      status: "CONFIRMADA",
-      progress: 25,
-      progressLabel: "Etapa: Reserva Confirmada",
-      image: "https://images.unsplash.com/photo-1611892440504-42a792e24d32?q=80&w=600&auto=format&fit=crop",
-      actions: ["Ver Detalles", "Solicitud Especial", "Cancelar Reserva"]
-    }
-  ];
+  const filteredReservations = (() => {
+    if (activeTab === 'active') return reservations.filter((r) => r.statusRaw === 'PENDIENTE' || r.statusRaw === 'CONFIRMADA');
+    if (activeTab === 'past') return reservations.filter((r) => r.statusRaw === 'CHECKOUT');
+    return reservations.filter((r) => r.statusRaw === 'CANCELADA');
+  })();
 
   const Sidebar = () => (
     <aside className="w-64 bg-white border-r border-gray-200 flex flex-col fixed inset-y-0 left-0 z-20 transition-all">
@@ -233,78 +287,76 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onLogout, 
 
             {/* List */}
             <div className="flex flex-col gap-6">
-                {activeTab === 'active' && reservations.map((res) => (
-                    <div key={res.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col md:flex-row">
-                        {/* Image */}
-                        <div className="w-full md:w-[320px] h-[220px] md:h-auto relative shrink-0">
-                            <img src={res.image} className="w-full h-full object-cover" alt={res.hotelName} />
-                        </div>
-
-                        {/* Content */}
-                        <div className="flex-1 p-6 flex flex-col justify-between">
-                            
-                            {/* Top Row */}
-                            <div className="flex justify-between items-start mb-4">
-                                <div>
-                                    <div className="flex items-center gap-3 mb-2">
-                                        <span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase ${res.status === 'EN ESTANCIA' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
-                                            {res.status}
-                                        </span>
-                                        <span className="text-xs text-gray-400 font-medium">Ref: #{res.id}</span>
-                                    </div>
-                                    <h3 className="text-xl font-bold text-[#111827] mb-1">{res.hotelName}</h3>
-                                    <div className="text-sm text-gray-500 flex items-center gap-2">
-                                        <span className="material-symbols-outlined text-[16px]">calendar_today</span>
-                                        {res.dates}
-                                        <span className="text-gray-300">|</span>
-                                        {res.details}
-                                    </div>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">TOTAL</p>
-                                    <p className="text-xl font-bold text-[#111827]">{res.total}</p>
-                                </div>
-                            </div>
-
-                            {/* Progress Bar */}
-                            <div className="mb-6">
-                                <div className="flex justify-between items-end mb-2">
-                                    <span className="text-sm font-bold text-[#111827]">{res.status === 'EN ESTANCIA' ? 'Tu viaje actual' : 'Progreso de Estancia'}</span>
-                                    <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">{res.progressLabel}</span>
-                                </div>
-                                <div className="w-full bg-gray-100 rounded-full h-2 mb-2 relative">
-                                    <div className="bg-[#3B82F6] h-2 rounded-full relative z-10" style={{width: `${res.progress}%`}}></div>
-                                </div>
-                                <div className="flex justify-between text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-                                    <span>RESERVA</span>
-                                    <span>PRE-CHECKIN</span>
-                                    <span className={res.progress > 50 ? 'text-blue-600' : ''}>ESTANCIA</span>
-                                    <span>CHECKOUT</span>
-                                </div>
-                            </div>
-
-                            {/* Actions */}
-                            <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-100">
-                                {res.actions.map((action, i) => (
-                                    <button 
-                                        key={i}
-                                        onClick={() => action === 'Ver Seguimiento' ? handleViewTracking(res.id) : null}
-                                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 
-                                            ${action === 'Ver Seguimiento' ? 'bg-[#3B82F6] text-white hover:bg-blue-700 shadow-md shadow-blue-100' : 
-                                              action === 'Cancelar Reserva' ? 'bg-white text-red-500 hover:bg-red-50 border border-red-100' :
-                                              'bg-gray-100 text-[#111827] hover:bg-gray-200'}`}
-                                    >
-                                        {action === 'Ver Seguimiento' && <span className="material-symbols-outlined text-[16px]">visibility</span>}
-                                        {action === 'Ver Detalles' && <span className="material-symbols-outlined text-[16px] filled">info</span>}
-                                        {action === 'Solicitud Especial' && <span className="material-symbols-outlined text-[16px]">room_service</span>}
-                                        {action}
-                                    </button>
-                                ))}
-                            </div>
-
-                        </div>
+                {reservationsLoading ? (
+                    <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
+                        <span className="material-symbols-outlined text-4xl text-gray-300 animate-pulse">hourglass_empty</span>
+                        <p className="text-gray-500 mt-2">Cargando tus reservas…</p>
                     </div>
-                ))}
+                ) : reservationsError ? (
+                    <div className="bg-white rounded-2xl border border-red-100 p-6 text-red-600">
+                        <p className="font-medium">{reservationsError}</p>
+                    </div>
+                ) : filteredReservations.length === 0 ? (
+                    <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
+                        <span className="material-symbols-outlined text-4xl text-gray-300">event_busy</span>
+                        <p className="text-gray-500 mt-2">
+                            {activeTab === 'active' && 'No tienes reservas activas.'}
+                            {activeTab === 'past' && 'No tienes reservas pasadas.'}
+                            {activeTab === 'cancelled' && 'No tienes reservas canceladas.'}
+                        </p>
+                        {activeTab === 'active' && (
+                            <button onClick={onNewReservation} className="mt-4 text-[#3B82F6] font-semibold text-sm hover:underline">
+                                Hacer una reserva
+                            </button>
+                        )}
+                    </div>
+                ) : (
+                    filteredReservations.map((res) => (
+                        <div key={res.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col md:flex-row">
+                            <div className="w-full md:w-[320px] h-[220px] md:h-auto relative shrink-0">
+                                <img src={res.image} className="w-full h-full object-cover" alt={res.hotelName} />
+                            </div>
+                            <div className="flex-1 p-6 flex flex-col justify-between">
+                                <div className="flex justify-between items-start mb-4">
+                                    <div>
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <span className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase ${
+                                                res.statusRaw === 'CANCELADA' ? 'bg-red-100 text-red-700' :
+                                                res.statusRaw === 'CHECKOUT' ? 'bg-gray-100 text-gray-700' :
+                                                res.statusRaw === 'PENDIENTE' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                                            }`}>
+                                                {res.status}
+                                            </span>
+                                            <span className="text-xs text-gray-400 font-medium">Ref: #{res.id.slice(0, 8)}</span>
+                                        </div>
+                                        <h3 className="text-xl font-bold text-[#111827] mb-1">{res.hotelName}</h3>
+                                        <div className="text-sm text-gray-500 flex items-center gap-2 flex-wrap">
+                                            <span className="material-symbols-outlined text-[16px]">calendar_today</span>
+                                            {res.dates}
+                                            <span className="text-gray-300">|</span>
+                                            {res.details}
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">TOTAL</p>
+                                        <p className="text-xl font-bold text-[#111827]">{res.total}</p>
+                                    </div>
+                                </div>
+                                {(res.statusRaw === 'PENDIENTE' || res.statusRaw === 'CONFIRMADA') && (
+                                    <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-100">
+                                        <button
+                                            onClick={() => handleViewTracking(res.id)}
+                                            className="px-4 py-2 rounded-lg text-xs font-bold bg-[#3B82F6] text-white hover:bg-blue-700 shadow-md shadow-blue-100 flex items-center gap-2"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">visibility</span>
+                                            Ver seguimiento
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))
+                )}
             </div>
 
             {/* Loyalty Banner */}

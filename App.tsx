@@ -392,7 +392,9 @@ const App: React.FC = () => {
         <div className="flex flex-1 justify-end items-center gap-4 lg:gap-8">
           <nav className="hidden md:flex items-center gap-9">
             <a className="text-sm font-medium leading-normal hover:text-primary transition-colors" href="#">Ofertas</a>
-            <button onClick={() => setView(ViewState.REGISTER)} className="text-sm font-medium leading-normal hover:text-primary transition-colors">Regístrate</button>
+            {!headerUser && (
+              <button onClick={() => setView(ViewState.REGISTER)} className="text-sm font-medium leading-normal hover:text-primary transition-colors">Regístrate</button>
+            )}
             {headerUser && (
               <span className="text-sm font-medium text-primary">
                 Hola, {headerUser.name}
