@@ -42,7 +42,8 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ onEditUser, refreshKey =
   const [profileFilter, setProfileFilter] = useState<string>('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
-  const [createForm, setCreateForm] = useState({ email: '', password: DEFAULT_PASSWORD, full_name: '', user_type: 'cliente' as 'cliente' | 'partner' | 'admin' });
+  const [createForm, setCreateForm] = useState({ email: '', password: DEFAULT_PASSWORD, first_name: '', last_name: '', user_type: 'cliente' as 'cliente' | 'partner' | 'admin' });
+  const [createFormErrors, setCreateFormErrors] = useState<Record<string, string>>({});
   const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -89,6 +90,17 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ onEditUser, refreshKey =
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCreateFormErrors({});
+    const err: Record<string, string> = {};
+    if (!createForm.email.trim()) err.email = 'Campo obligatorio';
+    if (!createForm.password.trim()) err.password = 'Campo obligatorio';
+    else if (createForm.password.length < 6) err.password = 'Mínimo 6 caracteres';
+    if (!createForm.first_name.trim()) err.first_name = 'Campo obligatorio';
+    if (!createForm.last_name.trim()) err.last_name = 'Campo obligatorio';
+    if (Object.keys(err).length > 0) {
+      setCreateFormErrors(err);
+      return;
+    }
     setCreateLoading(true);
     setError(null);
     try {
@@ -110,7 +122,8 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ onEditUser, refreshKey =
           access_token: session.access_token,
           email: createForm.email.trim(),
           password: createForm.password,
-          full_name: createForm.full_name.trim() || null,
+          full_name: [createForm.first_name.trim(), createForm.last_name.trim()].filter(Boolean).join(' ') || null,
+          last_name: createForm.last_name.trim() || null,
           user_type: createForm.user_type,
         }),
       });
@@ -120,7 +133,8 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ onEditUser, refreshKey =
         return;
       }
       setShowCreateModal(false);
-      setCreateForm({ email: '', password: DEFAULT_PASSWORD, full_name: '', user_type: 'cliente' });
+      setCreateForm({ email: '', password: DEFAULT_PASSWORD, first_name: '', last_name: '', user_type: 'cliente' });
+      setCreateFormErrors({});
       setCurrentPage(1);
       await new Promise((r) => setTimeout(r, 300));
       await loadUsers();
@@ -422,53 +436,72 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({ onEditUser, refreshKey =
             {/* Modal Nuevo Usuario */}
             {showCreateModal && (
               <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={() => setShowCreateModal(false)} />
+                <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={() => { setShowCreateModal(false); setCreateFormErrors({}); }} />
                 <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative z-10 p-6">
                   <h3 className="text-lg font-bold text-[#111827] mb-4">Nuevo Usuario</h3>
                   <form onSubmit={handleCreateUser} className="flex flex-col gap-4">
+                    {Object.keys(createFormErrors).length > 0 && (
+                      <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                        Por favor completa todos los campos obligatorios.
+                      </div>
+                    )}
                     <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">Correo</label>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Correo <span className="text-red-500">*</span></label>
                       <input
                         type="email"
-                        required
                         value={createForm.email}
-                        onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm"
+                        onChange={(e) => { setCreateForm((f) => ({ ...f, email: e.target.value })); setCreateFormErrors((e2) => ({ ...e2, email: '' })); }}
+                        className={`w-full px-4 py-2.5 border rounded-lg text-sm ${createFormErrors.email ? 'border-red-500 bg-red-50/50' : 'border-gray-200'}`}
                       />
+                      {createFormErrors.email && <p className="text-xs text-red-600 mt-0.5">{createFormErrors.email}</p>}
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">Contraseña temporal</label>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Contraseña temporal <span className="text-red-500">*</span></label>
                       <input
                         type="text"
-                        required
                         minLength={6}
                         value={createForm.password}
-                        onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm"
+                        onChange={(e) => { setCreateForm((f) => ({ ...f, password: e.target.value })); setCreateFormErrors((e2) => ({ ...e2, password: '' })); }}
+                        className={`w-full px-4 py-2.5 border rounded-lg text-sm ${createFormErrors.password ? 'border-red-500 bg-red-50/50' : 'border-gray-200'}`}
                       />
+                      {createFormErrors.password && <p className="text-xs text-red-600 mt-0.5">{createFormErrors.password}</p>}
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">Nombre completo</label>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Nombre <span className="text-red-500">*</span></label>
                       <input
                         type="text"
-                        value={createForm.full_name}
-                        onChange={(e) => setCreateForm((f) => ({ ...f, full_name: e.target.value }))}
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm"
+                        value={createForm.first_name}
+                        onChange={(e) => { setCreateForm((f) => ({ ...f, first_name: e.target.value })); setCreateFormErrors((e2) => ({ ...e2, first_name: '' })); }}
+                        placeholder="Ej. María"
+                        className={`w-full px-4 py-2.5 border rounded-lg text-sm ${createFormErrors.first_name ? 'border-red-500 bg-red-50/50' : 'border-gray-200'}`}
                       />
+                      {createFormErrors.first_name && <p className="text-xs text-red-600 mt-0.5">{createFormErrors.first_name}</p>}
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">Rol</label>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Apellidos <span className="text-red-500">*</span></label>
+                      <input
+                        type="text"
+                        value={createForm.last_name}
+                        onChange={(e) => { setCreateForm((f) => ({ ...f, last_name: e.target.value })); setCreateFormErrors((e2) => ({ ...e2, last_name: '' })); }}
+                        placeholder="Ej. García López"
+                        className={`w-full px-4 py-2.5 border rounded-lg text-sm ${createFormErrors.last_name ? 'border-red-500 bg-red-50/50' : 'border-gray-200'}`}
+                      />
+                      {createFormErrors.last_name && <p className="text-xs text-red-600 mt-0.5">{createFormErrors.last_name}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Rol <span className="text-red-500">*</span></label>
                       <select
                         value={createForm.user_type}
                         onChange={(e) => setCreateForm((f) => ({ ...f, user_type: e.target.value as 'cliente' | 'partner' | 'admin' }))}
                         className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm"
                       >
                         <option value="cliente">Cliente</option>
+                        <option value="partner">Partner</option>
                         <option value="admin">Admin</option>
                       </select>
                     </div>
                     <div className="flex gap-2 pt-2">
-                      <button type="button" onClick={() => setShowCreateModal(false)} className="flex-1 py-2.5 border border-gray-200 rounded-lg text-sm font-bold text-gray-600">
+                      <button type="button" onClick={() => { setShowCreateModal(false); setCreateFormErrors({}); }} className="flex-1 py-2.5 border border-gray-200 rounded-lg text-sm font-bold text-gray-600">
                         Cancelar
                       </button>
                       <button type="submit" disabled={createLoading} className="flex-1 py-2.5 bg-primary text-white rounded-lg text-sm font-bold disabled:opacity-60">

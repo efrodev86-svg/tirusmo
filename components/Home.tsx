@@ -3,6 +3,7 @@ import { SearchParams } from '../types';
 import { getDestinations } from '../services/hotelService';
 import { DateRangePicker } from './DateRangePicker';
 import { GuestSelector } from './GuestSelector';
+import { supabase } from '../lib/supabase';
 
 interface HomeProps {
   onSearch: (params: SearchParams) => void;
@@ -43,9 +44,33 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
   const [filteredDestinations, setFilteredDestinations] = useState<string[]>([]);
   const [showDestDropdown, setShowDestDropdown] = useState(false);
   const destInputRef = useRef<HTMLInputElement>(null);
+  const [userName, setUserName] = useState<string | null>(null);
 
   useEffect(() => {
     getDestinations().then(setDestinations);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled || !session?.user) {
+        if (!cancelled) setUserName(null);
+        return;
+      }
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', session.user.id)
+        .maybeSingle();
+      if (cancelled) return;
+      const name = (profile as { full_name?: string } | null)?.full_name?.trim()
+        || session.user.user_metadata?.full_name
+        || session.user.email?.split('@')[0]
+        || null;
+      setUserName(name || null);
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // DatePicker State
@@ -181,6 +206,11 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
         </div>
 
         <div className="relative z-20 flex flex-col gap-6 text-center max-w-4xl mx-auto mb-12">
+          {userName && (
+            <p className="text-white/95 text-xl md:text-2xl font-semibold drop-shadow-md">
+              Hola, {userName}
+            </p>
+          )}
           <h1 className="text-white text-4xl font-black leading-tight tracking-[-0.033em] md:text-6xl drop-shadow-lg">
             Encuentra tu estancia perfecta
           </h1>

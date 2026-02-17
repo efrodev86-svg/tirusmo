@@ -32,7 +32,7 @@ type HotelData = {
 
 type RoomSummary = { type: string; total: number; available: number; price: number };
 
-type ProfilePartner = { id: string; full_name: string | null; email: string };
+type ProfilePartner = { id: string; full_name: string | null; email: string; phone: string | null };
 
 interface AdminHotelDetailProps {
   hotelId: string;
@@ -127,11 +127,11 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
         }
 
         if (h.partner_id) {
-          const { data: profileRow } = await supabase.from('profiles').select('id, full_name, email').eq('id', h.partner_id).single();
+          const { data: profileRow } = await supabase.from('profiles').select('id, full_name, email, phone').eq('id', h.partner_id).single();
           if (profileRow && !cancelled) setPartner(profileRow as ProfilePartner);
         } else setPartner(null);
 
-        const { data: partnersData } = await supabase.from('profiles').select('id, full_name, email').eq('user_type', 'partner').order('full_name');
+        const { data: partnersData } = await supabase.from('profiles').select('id, full_name, email, phone').eq('user_type', 'partner').order('full_name');
         if (partnersData && !cancelled) setPartnersList((partnersData as ProfilePartner[]) || []);
       } catch (e: unknown) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Error al cargar');
@@ -376,6 +376,7 @@ export const AdminHotelDetail: React.FC<AdminHotelDetailProps> = ({ hotelId, onB
             <div className="space-y-1 text-sm mb-4">
               <p className="font-bold text-[#111827]">{partner.full_name || '—'}</p>
               <p className="text-gray-600">{partner.email || '—'}</p>
+              {partner.phone ? <p className="text-gray-600">{partner.phone}</p> : null}
             </div>
           ) : (
             <p className="text-gray-500 text-sm mb-4">Ningún partner asignado.</p>

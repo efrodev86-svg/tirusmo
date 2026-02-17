@@ -76,7 +76,7 @@ export const AdminReservations: React.FC<AdminReservationsProps> = ({ onSelectRe
 
       let q = supabase
         .from('reservations')
-        .select('id, user_id, hotel_id, room_id, check_in, check_out, total, status, guests, created_at, hotels(name), rooms(name)', { count: 'exact' });
+        .select('id, user_id, hotel_id, room_id, check_in, check_out, total, status, guests, created_at, data, hotels(name), rooms(name)', { count: 'exact' });
 
       if (filterHotelId) q = q.eq('hotel_id', Number(filterHotelId));
       if (filterStatus) q = q.eq('status', filterStatus);
@@ -124,8 +124,13 @@ export const AdminReservations: React.FC<AdminReservationsProps> = ({ onSelectRe
         const profile = (r.user_id ? profilesMap[r.user_id as string] : null) || null;
         const hotel = r.hotels as { name?: string } | null;
         const room = r.rooms as { name?: string } | null;
-        const name = profile?.full_name || profile?.email || 'Sin nombre';
-        const email = profile?.email || '';
+        const data = (r.data as { guest_first_name?: string; guest_last_name?: string; guest_email?: string } | null) || null;
+        const guestNameFromData = data?.guest_first_name || data?.guest_last_name
+          ? [data.guest_first_name, data.guest_last_name].filter(Boolean).join(' ').trim()
+          : data?.guest_email || '';
+        // Titular de la reserva: priorizar datos ingresados en el formulario (pueden ser de otra persona si el usuario reservó a nombre de otro)
+        const name = guestNameFromData || profile?.full_name || profile?.email || 'Sin nombre';
+        const email = (data?.guest_email && data.guest_email.trim()) ? data.guest_email : (profile?.email || '');
         const checkIn = String(r.check_in || '');
         const checkOut = String(r.check_out || '');
         const nights = r.check_in && r.check_out

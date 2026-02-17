@@ -454,7 +454,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
             </div>
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold text-[#617289] dark:text-gray-400 uppercase tracking-wider">Estilo de vida:</span>
+                <span className="text-xs font-semibold text-[#617289] dark:text-gray-400 uppercase tracking-wider">Estilos de viaje:</span>
                 {TRAVEL_STYLE_OPTIONS.map((style) => {
                   const isSelected = headerTravelStyles.includes(style);
                   return (

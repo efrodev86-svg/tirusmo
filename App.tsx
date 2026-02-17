@@ -52,9 +52,14 @@ const VIEW_BREADCRUMB_LABEL: Record<ViewState, string> = {
   [ViewState.TERMS]: 'Términos y condiciones',
 };
 
+type HeaderUser = { name: string; avatarUrl: string; userType: 'cliente' | 'partner' | 'admin' };
+
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>(ViewState.HOME);
   const [dashboardAllowed, setDashboardAllowed] = useState<boolean | null>(null);
+  const [headerUser, setHeaderUser] = useState<HeaderUser | null>(null);
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  const headerMenuRef = useRef<HTMLDivElement>(null);
   const [searchParams, setSearchParams] = useState<SearchParams>({
     destination: '',
     checkIn: '',
@@ -178,9 +183,53 @@ const App: React.FC = () => {
   const handleLogout = () => {
     supabase.auth.signOut();
     setDashboardAllowed(null);
+    setHeaderUser(null);
     setView(ViewState.HOME);
     window.scrollTo(0, 0);
   };
+
+  // Usuario en header: sesión + perfil (foto y tipo para ir al dashboard)
+  useEffect(() => {
+    const updateHeaderUser = async (userId: string) => {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name, user_type')
+        .eq('id', userId)
+        .maybeSingle();
+      const p = profile as { full_name?: string; user_type?: string } | null;
+      const name = p?.full_name?.trim() || '';
+      const userType = (p?.user_type as 'cliente' | 'partner' | 'admin') ?? 'cliente';
+      const { data: { user } } = await supabase.auth.getUser();
+      const avatarUrl = user?.user_metadata?.avatar_url
+        || (name ? `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=2b7cee&color=fff` : 'https://ui-avatars.com/api/?name=Usuario&background=2b7cee&color=fff');
+      setHeaderUser({ name: name || 'Usuario', avatarUrl, userType });
+    };
+    const { data: { listener } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user?.id) {
+        updateHeaderUser(session.user.id);
+      } else {
+        setHeaderUser(null);
+      }
+    });
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) updateHeaderUser(session.user.id);
+      else setHeaderUser(null);
+    });
+    return () => { listener?.unsubscribe(); };
+  }, []);
+
+  // Cerrar menú del header al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(e.target as Node)) {
+        setHeaderMenuOpen(false);
+      }
+    };
+    if (headerMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [headerMenuOpen]);
 
   // Detectar enlace de restablecimiento de contraseña (hash type=recovery)
   useEffect(() => {
@@ -344,15 +393,55 @@ const App: React.FC = () => {
           <nav className="hidden md:flex items-center gap-9">
             <a className="text-sm font-medium leading-normal hover:text-primary transition-colors" href="#">Ofertas</a>
             <button onClick={() => setView(ViewState.REGISTER)} className="text-sm font-medium leading-normal hover:text-primary transition-colors">Regístrate</button>
+            {headerUser && (
+              <span className="text-sm font-medium text-primary">
+                Hola, {headerUser.name}
+              </span>
+            )}
           </nav>
           <div className="flex gap-2 items-center">
-             <button 
-                onClick={handleLoginClick}
-                className="bg-primary hover:bg-blue-600 text-white px-5 py-2.5 rounded-full font-bold text-sm transition-all shadow-md hover:shadow-lg flex items-center gap-2"
-             >
-                <span className="material-symbols-outlined text-[20px]">account_circle</span>
-                <span>Iniciar Sesión</span>
-             </button>
+             {headerUser ? (
+               <div className="relative" ref={headerMenuRef}>
+                 <button
+                   onClick={() => setHeaderMenuOpen((o) => !o)}
+                   className="flex items-center gap-2 px-3 py-2 rounded-full font-semibold text-sm transition-all hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-600"
+                   title="Opciones de cuenta"
+                   aria-expanded={headerMenuOpen}
+                   aria-haspopup="true"
+                 >
+                   <img src={headerUser.avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover border-2 border-primary/30" />
+                   <span className="material-symbols-outlined text-gray-500 text-[20px] transition-transform duration-200" style={{ transform: headerMenuOpen ? 'rotate(180deg)' : undefined }}>
+                     expand_more
+                   </span>
+                 </button>
+                 {headerMenuOpen && (
+                   <div className="absolute right-0 top-full mt-2 w-52 py-1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-600 shadow-lg z-50">
+                     <button
+                       onClick={() => { setHeaderMenuOpen(false); handleLoginSuccess(headerUser.userType); }}
+                       className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                     >
+                       <span className="material-symbols-outlined text-[20px] text-primary">dashboard</span>
+                       Ir al dashboard
+                     </button>
+                     <button
+                       onClick={() => { setHeaderMenuOpen(false); handleLogout(); }}
+                       className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                     >
+                       <span className="material-symbols-outlined text-[20px]">logout</span>
+                       Cerrar sesión
+                     </button>
+                   </div>
+                 )}
+               </div>
+             ) : (
+               <button
+                 onClick={handleLoginClick}
+                 className="bg-primary hover:bg-blue-600 text-white px-5 py-2.5 rounded-full font-bold text-sm transition-all shadow-md hover:shadow-lg flex items-center gap-2"
+               >
+                 <span className="material-symbols-outlined text-[20px]">account_circle</span>
+                 <span>Iniciar Sesión</span>
+               </button>
+             )}
           </div>
         </div>
         </div>

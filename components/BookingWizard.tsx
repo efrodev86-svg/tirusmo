@@ -6,6 +6,9 @@ import { supabase } from '../lib/supabase';
 
 const STICKY_TOP_PX = 24;
 
+const formatCantidad = (n: number): string =>
+  n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 const LADA_COUNTRIES: { code: string; flag: string; name: string }[] = [
   { code: '+52', flag: '🇲🇽', name: 'México' },
   { code: '+1', flag: '🇺🇸', name: 'Estados Unidos' },
@@ -71,6 +74,9 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
   const ladaInputRef = useRef<HTMLInputElement>(null);
   type PaymentMethodType = 'card' | 'paypal' | 'openpay' | 'stripe' | 'transfer';
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodType>('card');
+  const [savingReservation, setSavingReservation] = useState(false);
+  const [reservationError, setReservationError] = useState('');
+  const [reservationId, setReservationId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!hotel?.id) return;
@@ -134,12 +140,23 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
   const selectedPlanItem = selectedMealPlan ? hotel.meal_plans?.find((p) => p.type === selectedMealPlan) : null;
   const mealPlanCostPerNight = selectedPlanItem?.cost ?? 0;
 
+  // Noches desde fechas de búsqueda
+  const nights = (() => {
+    const ci = searchParams.checkIn?.trim();
+    const co = searchParams.checkOut?.trim();
+    if (!ci || !co) return 1;
+    const d1 = new Date(ci);
+    const d2 = new Date(co);
+    if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) return 1;
+    const diff = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+    return Math.max(1, diff);
+  })();
+
   // Calculate Totals
-  const nights = 4; // Mock calculation, normally diff(checkOut, checkIn)
   const roomTotal = nights * roomPrice;
   const mealPlanTotalForStay = mealPlanCostPerNight * nights;
   const subtotalBeforeTax = roomTotal + mealPlanTotalForStay;
-  const taxes = subtotalBeforeTax * 0.12;
+  const taxes = subtotalBeforeTax * 0.16;
   const service = 41;
   const total = subtotalBeforeTax + taxes + service;
 
@@ -226,6 +243,65 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
     return true;
   };
 
+  const handlePagarYConfirmar = async () => {
+    if (!termsAccepted) return;
+    setReservationError('');
+    setSavingReservation(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const checkIn = searchParams.checkIn?.trim() || new Date().toISOString().slice(0, 10);
+      const checkOut = searchParams.checkOut?.trim() || checkIn;
+      const guestCount = Math.max(1, (searchParams.guests?.adults ?? 1) + (searchParams.guests?.children ?? 0));
+      const roomId = selectedRoomId ?? hotelRooms[0]?.id;
+      if (!roomId) {
+        setReservationError('No hay habitación seleccionada.');
+        setSavingReservation(false);
+        return;
+      }
+      const payload = {
+        user_id: session?.user?.id ?? null,
+        hotel_id: hotel.id,
+        room_id: roomId,
+        check_in: checkIn,
+        check_out: checkOut,
+        total: Number(total.toFixed(2)),
+        status: 'PENDIENTE',
+        guests: guestCount,
+        amount_paid: 0,
+        data: {
+          guest_first_name: guestDetails.firstName?.trim() || '',
+          guest_last_name: guestDetails.lastName?.trim() || '',
+          guest_email: guestDetails.email?.trim() || '',
+          guest_phone: guestDetails.phone?.trim() || '',
+          guest_phone_lada: phoneLada || '+52',
+          special_requests: guestDetails.specialRequests?.trim() || '',
+          payment_method: paymentMethod,
+        },
+      };
+      const { data: inserted, error: insertError } = await supabase
+        .from('reservations')
+        .insert(payload)
+        .select('id')
+        .single();
+
+      if (insertError) {
+        setReservationError(insertError.message || 'No se pudo guardar la reserva. Intenta de nuevo.');
+        setSavingReservation(false);
+        return;
+      }
+      if (inserted?.id) {
+        setReservationId(inserted.id);
+        setStep(BookingStep.CONFIRMATION);
+      } else {
+        setReservationError('No se recibió confirmación. Intenta de nuevo.');
+      }
+    } catch (e) {
+      setReservationError(e instanceof Error ? e.message : 'Error al guardar la reserva.');
+    } finally {
+      setSavingReservation(false);
+    }
+  };
+
   const renderStepIndicator = () => (
     <div className="flex flex-col gap-3 mb-8 w-full max-w-[800px] mx-auto">
       <div className="flex justify-between items-center text-sm font-medium text-[#617289] dark:text-gray-400">
@@ -249,6 +325,17 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
   );
 
   const renderSelectionStep = () => (
+    <>
+    <div className="mb-6">
+      <button
+        type="button"
+        onClick={onBack}
+        className="flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+      >
+        <span className="material-symbols-outlined text-lg">arrow_back</span>
+        Volver a resultados
+      </button>
+    </div>
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start overflow-visible">
         <div className="lg:col-span-8 flex flex-col gap-6 min-w-0">
             <div className="bg-white dark:bg-[#1a222d] rounded-xl border border-[#e5e7eb] dark:border-[#2a3441] overflow-hidden shadow-sm">
@@ -447,7 +534,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
                         </div>
                         )}
                         <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                            <span>Impuestos (12%)</span>
+                            <span>Impuestos (16%)</span>
                             <span className="font-medium text-[#111418] dark:text-white">${taxes.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
@@ -457,7 +544,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
                         <div className="my-4 h-px border-t border-dashed border-gray-300 dark:border-gray-600"></div>
                         <div className="flex justify-between items-end mb-6">
                             <span className="text-sm font-medium text-gray-500">Total a pagar</span>
-                            <span className="text-3xl font-black text-primary">${total.toFixed(2)}</span>
+                            <span className="text-3xl font-black text-primary">${formatCantidad(total)}</span>
                         </div>
                         <button onClick={() => setStep(BookingStep.DETAILS)} className="flex w-full items-center justify-center rounded-xl h-14 bg-primary hover:bg-blue-600 text-white text-lg font-bold shadow-lg shadow-blue-200 dark:shadow-none group transition-all">
                             <span>Continuar a Mis Datos</span>
@@ -471,7 +558,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
         <div className="lg:hidden fixed bottom-0 left-0 right-0 z-20 bg-white dark:bg-[#1a222d] border-t border-gray-200 dark:border-gray-700 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] dark:shadow-[0_-4px_12px_rgba(0,0,0,0.3)] px-4 py-3 flex items-center justify-between gap-4">
           <div>
             <p className="text-xs text-gray-500 dark:text-gray-400">Total a pagar</p>
-            <p className="text-xl font-black text-primary">${total.toFixed(2)}</p>
+            <p className="text-xl font-black text-primary">${formatCantidad(total)}</p>
           </div>
           <button onClick={() => setStep(BookingStep.DETAILS)} className="flex-shrink-0 flex items-center justify-center rounded-xl h-12 px-6 bg-primary hover:bg-blue-600 text-white font-bold text-sm shadow-lg group transition-all">
             <span>Continuar</span>
@@ -480,6 +567,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
         </div>
         <div className="lg:hidden h-20" aria-hidden="true" />
     </div>
+    </>
   );
 
   const renderGuestDetailsStep = () => (
@@ -494,9 +582,13 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
                   <span className="material-symbols-outlined text-lg">arrow_back</span> Volver
               </button>
               <div className="bg-white dark:bg-[#1a222d] rounded-xl border border-[#e5e7eb] dark:border-[#2a3441] p-6 shadow-sm">
-                  <h3 className="text-lg font-bold mb-6 flex items-center gap-2 pb-2 border-b border-gray-100 dark:border-gray-800">
+                  <h3 className="text-lg font-bold mb-2 flex items-center gap-2 pb-2 border-b border-gray-100 dark:border-gray-800">
                       <span className="material-symbols-outlined text-primary">person</span> Información Personal
                   </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                      La reservación quedará a nombre de la persona cuyos datos ingreses a continuación.
+                      Si estás logueado y quieres reservar a nombre de otra persona (familiar, amigo, etc.), puedes modificar los datos y se guardará a nombre de quien indiques.
+                  </p>
                   {formErrorMessage && (
                     <div className="mb-4 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 flex items-center gap-2 text-red-700 dark:text-red-300 text-sm">
                       <span className="material-symbols-outlined text-lg shrink-0">error</span>
@@ -609,7 +701,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
                       <span className="font-medium text-[#111418] dark:text-white">${roomTotal.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                      <span>Impuestos (12%)</span>
+                      <span>Impuestos (16%)</span>
                       <span className="font-medium text-[#111418] dark:text-white">${taxes.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
@@ -619,7 +711,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
                     <div className="my-4 h-px border-t border-dashed border-gray-300 dark:border-gray-600" />
                     <div className="flex justify-between items-end">
                       <span className="text-sm font-medium text-gray-500">Total a pagar</span>
-                      <span className="text-2xl font-black text-primary">${total.toFixed(2)}</span>
+                      <span className="text-2xl font-black text-primary">${formatCantidad(total)}</span>
                     </div>
                   </div>
                 </div>
@@ -630,7 +722,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
         <div className="lg:hidden fixed bottom-0 left-0 right-0 z-20 bg-white dark:bg-[#1a222d] border-t border-gray-200 dark:border-gray-700 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] px-4 py-3 flex items-center justify-between gap-4">
           <div>
             <p className="text-xs text-gray-500 dark:text-gray-400">Total a pagar</p>
-            <p className="text-xl font-black text-primary">${total.toFixed(2)}</p>
+            <p className="text-xl font-black text-primary">${formatCantidad(total)}</p>
           </div>
         </div>
         <div className="lg:hidden h-16" aria-hidden="true" />
@@ -814,7 +906,13 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
                         <span className="text-lg font-black text-primary">${total.toFixed(2)}</span>
                       </div>
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Incluye la referencia en el concepto de tu transferencia. Después de pagar, envía tu comprobante al correo que te indicaremos para confirmar tu reserva.</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Incluye la referencia en el concepto de tu transferencia.</p>
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/10 dark:bg-primary/20 border border-primary/30 dark:border-primary/40">
+                      <span className="material-symbols-outlined text-primary text-[20px] shrink-0 mt-0.5">mail</span>
+                      <p className="text-sm text-[#111418] dark:text-gray-200">
+                        Debes enviar tu comprobante de pago a <a href="mailto:administracion@escapar.mx" className="font-semibold text-primary hover:underline">administracion@escapar.mx</a> para confirmar tu reserva. La reserva quedará en estatus <strong>Pendiente</strong> hasta que se verifique el pago.
+                      </p>
+                    </div>
                   </div>
                 )}
              </div>
@@ -846,12 +944,27 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
                 </button>
              </div>
 
+             {reservationError && (
+                <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 flex items-center gap-2 text-red-700 dark:text-red-300 text-sm">
+                  <span className="material-symbols-outlined shrink-0">error</span>
+                  {reservationError}
+                </div>
+             )}
              <button 
-                onClick={() => setStep(BookingStep.CONFIRMATION)}
-                disabled={!termsAccepted}
-                className={`flex w-full items-center justify-center rounded-xl h-14 text-lg font-bold shadow-lg transition-all ${termsAccepted ? 'bg-primary hover:bg-blue-600 text-white shadow-blue-200 dark:shadow-none' : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed shadow-none'}`}
+                onClick={handlePagarYConfirmar}
+                disabled={!termsAccepted || savingReservation}
+                className={`flex w-full items-center justify-center rounded-xl h-14 text-lg font-bold shadow-lg transition-all ${termsAccepted && !savingReservation ? 'bg-primary hover:bg-blue-600 text-white shadow-blue-200 dark:shadow-none' : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed shadow-none'}`}
              >
-                <span className="material-symbols-outlined mr-2">lock</span> Pagar y Confirmar (${total.toFixed(2)})
+                {savingReservation ? (
+                  <>
+                    <span className="material-symbols-outlined animate-spin mr-2">progress_activity</span>
+                    Guardando reserva...
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined mr-2">lock</span> Pagar y Confirmar (${total.toFixed(2)})
+                  </>
+                )}
              </button>
         </div>
       </div>
@@ -859,6 +972,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
 
   const confirmationNumberRef = useRef<string | null>(null);
   const getConfirmationNumber = () => {
+    if (reservationId) return reservationId.slice(0, 8).toUpperCase();
     if (!confirmationNumberRef.current) confirmationNumberRef.current = `SJ-${Date.now().toString(36).toUpperCase().slice(-8)}`;
     return confirmationNumberRef.current;
   };
@@ -932,7 +1046,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
     addSection('PRECIO PAGADO');
     addLine(`${nights} noches x $${roomPrice.toFixed(2)}`, `$${roomTotal.toFixed(2)}`);
     if (mealPlanTotalForStay > 0) addLine('Plan de alimentos', `$${mealPlanTotalForStay.toFixed(2)}`);
-    addLine('Impuestos (12%)', `$${taxes.toFixed(2)}`);
+    addLine('Impuestos (16%)', `$${taxes.toFixed(2)}`);
     addLine('Tarifa de servicio', `$${service.toFixed(2)}`);
     doc.setFont('helvetica', 'bold');
     addLine('Total pagado', `$${total.toFixed(2)}`);
@@ -1096,7 +1210,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
                       </div>
                     )}
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-600 dark:text-gray-400">Impuestos (12%)</span>
+                      <span className="text-gray-600 dark:text-gray-400">Impuestos (16%)</span>
                       <span className="font-medium text-[#111418] dark:text-white">${taxes.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-sm">

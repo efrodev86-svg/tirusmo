@@ -1,5 +1,56 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+
+const LADA_COUNTRIES: { code: string; flag: string; name: string }[] = [
+  { code: '+52', flag: '🇲🇽', name: 'México' },
+  { code: '+1', flag: '🇺🇸', name: 'Estados Unidos' },
+  { code: '+34', flag: '🇪🇸', name: 'España' },
+  { code: '+57', flag: '🇨🇴', name: 'Colombia' },
+  { code: '+54', flag: '🇦🇷', name: 'Argentina' },
+  { code: '+56', flag: '🇨🇱', name: 'Chile' },
+  { code: '+51', flag: '🇵🇪', name: 'Perú' },
+  { code: '+58', flag: '🇻🇪', name: 'Venezuela' },
+  { code: '+593', flag: '🇪🇨', name: 'Ecuador' },
+  { code: '+502', flag: '🇬🇹', name: 'Guatemala' },
+  { code: '+53', flag: '🇨🇺', name: 'Cuba' },
+  { code: '+591', flag: '🇧🇴', name: 'Bolivia' },
+  { code: '+506', flag: '🇨🇷', name: 'Costa Rica' },
+  { code: '+507', flag: '🇵🇦', name: 'Panamá' },
+  { code: '+598', flag: '🇺🇾', name: 'Uruguay' },
+  { code: '+595', flag: '🇵🇾', name: 'Paraguay' },
+  { code: '+503', flag: '🇸🇻', name: 'El Salvador' },
+  { code: '+504', flag: '🇭🇳', name: 'Honduras' },
+  { code: '+505', flag: '🇳🇮', name: 'Nicaragua' },
+  { code: '+49', flag: '🇩🇪', name: 'Alemania' },
+  { code: '+33', flag: '🇫🇷', name: 'Francia' },
+  { code: '+39', flag: '🇮🇹', name: 'Italia' },
+  { code: '+44', flag: '🇬🇧', name: 'Reino Unido' },
+  { code: '+55', flag: '🇧🇷', name: 'Brasil' },
+];
+
+function parsePhone(phone: string): { lada: string; local: string } {
+  const raw = (phone || '').trim();
+  if (!raw) return { lada: '+52', local: '' };
+  const withPlus = raw.startsWith('+') ? raw : '+' + raw.replace(/\D/g, '');
+  const sorted = [...LADA_COUNTRIES].sort((a, b) => b.code.length - a.code.length);
+  for (const c of sorted) {
+    if (withPlus === c.code || withPlus.startsWith(c.code)) {
+      const local = raw.startsWith('+') ? raw.slice(c.code.length).trim() : raw.replace(/^\D*/, '').replace(new RegExp('^' + c.code.replace(/\+/, '\\+')), '').trim();
+      return { lada: c.code, local: local.replace(/\s/g, ' ') };
+    }
+  }
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length >= 2) {
+    for (const c of sorted) {
+      const codeDigits = c.code.replace(/\D/g, '');
+      if (digits.startsWith(codeDigits)) {
+        const local = digits.slice(codeDigits.length).replace(/(\d{2})(?=\d)/g, '$1 ').trim();
+        return { lada: c.code, local };
+      }
+    }
+  }
+  return { lada: '+52', local: raw };
+}
 
 interface AdminUserDetailProps {
   userId: string;
@@ -12,7 +63,8 @@ export const AdminUserDetail: React.FC<AdminUserDetailProps> = ({ userId, onBack
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userData, setUserData] = useState({
-    full_name: '',
+    first_name: '',
+    last_name: '',
     email: '',
     phone: '',
     user_type: 'cliente' as 'cliente' | 'partner' | 'admin',
@@ -25,6 +77,11 @@ export const AdminUserDetail: React.FC<AdminUserDetailProps> = ({ userId, onBack
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [phoneLada, setPhoneLada] = useState('+52');
+  const [phoneLocal, setPhoneLocal] = useState('');
+  const [ladaOpen, setLadaOpen] = useState(false);
+  const ladaInputRef = useRef<HTMLInputElement>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ first_name?: string; last_name?: string; phone?: string }>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -33,7 +90,7 @@ export const AdminUserDetail: React.FC<AdminUserDetailProps> = ({ userId, onBack
       setError(null);
       const { data, error: err } = await supabase
         .from('profiles')
-        .select('id, email, full_name, phone, user_type, is_active')
+        .select('id, email, full_name, last_name, phone, user_type, is_active')
         .eq('id', userId)
         .single();
       if (cancelled) return;
@@ -42,8 +99,17 @@ export const AdminUserDetail: React.FC<AdminUserDetailProps> = ({ userId, onBack
         setLoading(false);
         return;
       }
+      const fullName = (data.full_name || '').trim();
+      const lastName = (data.last_name || '').trim();
+      const firstName = lastName
+        ? fullName.replace(new RegExp('\\s+' + lastName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'), '').trim()
+        : fullName.split(/\s+/)[0] || '';
+      const { lada, local } = parsePhone(data.phone || '');
+      setPhoneLada(lada);
+      setPhoneLocal(local);
       setUserData({
-        full_name: data.full_name || '',
+        first_name: firstName,
+        last_name: lastName,
         email: data.email || '',
         phone: data.phone || '',
         user_type: (data.user_type as 'cliente' | 'partner' | 'admin') || 'cliente',
@@ -57,14 +123,26 @@ export const AdminUserDetail: React.FC<AdminUserDetailProps> = ({ userId, onBack
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
     setError(null);
+    const errs: { first_name?: string; last_name?: string; phone?: string } = {};
+    if (!userData.first_name.trim()) errs.first_name = 'El nombre es requerido';
+    if (!userData.last_name.trim()) errs.last_name = 'Los apellidos son requeridos';
+    if (!phoneLocal.trim()) errs.phone = 'El teléfono es requerido';
+    if (Object.keys(errs).length) {
+      setFieldErrors(errs);
+      return;
+    }
+    setFieldErrors({});
+    setSaving(true);
     try {
+      const fullName = [userData.first_name.trim(), userData.last_name.trim()].filter(Boolean).join(' ') || null;
+      const phoneFull = [phoneLada.trim(), phoneLocal.trim()].filter(Boolean).join(' ').trim() || null;
       const { error: updateErr } = await supabase
         .from('profiles')
         .update({
-          full_name: userData.full_name.trim() || null,
-          phone: userData.phone.trim() || null,
+          full_name: fullName,
+          last_name: userData.last_name.trim() || null,
+          phone: phoneFull,
           user_type: userData.user_type,
           is_active: userData.is_active,
           updated_at: new Date().toISOString(),
@@ -156,7 +234,8 @@ export const AdminUserDetail: React.FC<AdminUserDetailProps> = ({ userId, onBack
     }
   };
 
-  const imageUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent((userData.full_name || userData.email || 'U').replace(/\s+/g, '+'))}&background=random`;
+  const displayName = [userData.first_name, userData.last_name].filter(Boolean).join(' ') || userData.email || 'U';
+  const imageUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName.replace(/\s+/g, '+'))}&background=random`;
 
   if (loading) {
     return (
@@ -205,13 +284,30 @@ export const AdminUserDetail: React.FC<AdminUserDetailProps> = ({ userId, onBack
         <form onSubmit={handleSave}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-bold text-gray-700">Nombre Completo</label>
+              <label className="text-sm font-bold text-gray-700">
+                Nombre <span className="text-red-500">*</span>
+              </label>
               <input
                 type="text"
-                value={userData.full_name}
-                onChange={(e) => setUserData((u) => ({ ...u, full_name: e.target.value }))}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary bg-white text-gray-800"
+                value={userData.first_name}
+                onChange={(e) => { setUserData((u) => ({ ...u, first_name: e.target.value })); if (fieldErrors.first_name) setFieldErrors((e2) => ({ ...e2, first_name: undefined })); }}
+                placeholder="Ej. María"
+                className={`w-full px-4 py-2.5 border rounded-lg text-sm outline-none focus:ring-1 bg-white text-gray-800 ${fieldErrors.first_name ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : 'border-gray-200 focus:border-primary focus:ring-primary'}`}
               />
+              {fieldErrors.first_name && <p className="text-xs text-red-500">{fieldErrors.first_name}</p>}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-bold text-gray-700">
+                Apellidos <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={userData.last_name}
+                onChange={(e) => { setUserData((u) => ({ ...u, last_name: e.target.value })); if (fieldErrors.last_name) setFieldErrors((e2) => ({ ...e2, last_name: undefined })); }}
+                placeholder="Ej. García López"
+                className={`w-full px-4 py-2.5 border rounded-lg text-sm outline-none focus:ring-1 bg-white text-gray-800 ${fieldErrors.last_name ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : 'border-gray-200 focus:border-primary focus:ring-primary'}`}
+              />
+              {fieldErrors.last_name && <p className="text-xs text-red-500">{fieldErrors.last_name}</p>}
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-bold text-gray-700">Correo Electrónico</label>
@@ -223,14 +319,57 @@ export const AdminUserDetail: React.FC<AdminUserDetailProps> = ({ userId, onBack
                 title="El correo no se puede cambiar"
               />
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-bold text-gray-700">Teléfono</label>
-              <input
-                type="tel"
-                value={userData.phone}
-                onChange={(e) => setUserData((u) => ({ ...u, phone: e.target.value }))}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary bg-white text-gray-800"
-              />
+            <div className="flex flex-col gap-1.5 relative">
+              <label className="text-sm font-bold text-gray-700">
+                Teléfono <span className="text-red-500">*</span>
+              </label>
+              <div className={`flex rounded-lg border overflow-visible bg-white ${fieldErrors.phone ? 'border-red-500' : 'border-gray-200'}`}>
+                <div className="flex items-center bg-gray-100 border-r border-gray-200 px-2 min-w-[100px]">
+                  <span className="text-2xl mr-2 select-none" title={(LADA_COUNTRIES.find((c) => c.code === phoneLada) ?? LADA_COUNTRIES.find((c) => phoneLada !== '+' && c.code.replace(/\D/g, '').startsWith(phoneLada.replace(/\D/g, ''))))?.name}>
+                    {(LADA_COUNTRIES.find((c) => c.code === phoneLada) ?? LADA_COUNTRIES.find((c) => phoneLada !== '+' && c.code.replace(/\D/g, '').startsWith(phoneLada.replace(/\D/g, ''))))?.flag ?? '🌐'}
+                  </span>
+                  <input
+                    ref={ladaInputRef}
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="+52"
+                    value={phoneLada}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const norm = raw.trim().startsWith('+') ? raw : '+' + raw.replace(/\D/g, '');
+                      setPhoneLada(norm || '+');
+                    }}
+                    onFocus={() => setLadaOpen(true)}
+                    onBlur={() => setTimeout(() => setLadaOpen(false), 200)}
+                    className="w-14 bg-transparent text-sm font-medium outline-none text-gray-800 py-2.5"
+                  />
+                </div>
+                {ladaOpen && (
+                  <div className="absolute z-50 mt-11 left-0 right-0 md:right-auto md:w-80 max-h-56 overflow-auto bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+                    {LADA_COUNTRIES.filter((c) => !phoneLada || phoneLada === '+' || c.code.replace(/\D/g, '').startsWith(phoneLada.replace(/\D/g, ''))).slice(0, 12).map((c) => (
+                      <button
+                        key={c.code + c.name}
+                        type="button"
+                        onClick={() => { setPhoneLada(c.code); setLadaOpen(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-2 text-left text-sm hover:bg-gray-100"
+                      >
+                        <span className="text-xl">{c.flag}</span>
+                        <span className="font-medium text-gray-800">{c.code}</span>
+                        <span className="text-gray-500">{c.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="Ej. 55 1234 5678"
+                  value={phoneLocal}
+                  onChange={(e) => { setPhoneLocal(e.target.value); if (fieldErrors.phone) setFieldErrors((e2) => ({ ...e2, phone: undefined })); }}
+                  className="flex-1 min-w-0 px-4 py-2.5 text-sm outline-none focus:ring-1 focus:ring-primary bg-white text-gray-800"
+                />
+              </div>
+              {fieldErrors.phone && <p className="text-xs text-red-500">{fieldErrors.phone}</p>}
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-bold text-gray-700">Rol de Usuario</label>
@@ -240,6 +379,7 @@ export const AdminUserDetail: React.FC<AdminUserDetailProps> = ({ userId, onBack
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary bg-white text-gray-800"
               >
                 <option value="cliente">Cliente</option>
+                <option value="partner">Partner</option>
                 <option value="admin">Administrador</option>
               </select>
             </div>

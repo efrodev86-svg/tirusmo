@@ -16,10 +16,15 @@ interface Note {
 
 type ReservationData = {
   id: string;
+  /** Titular de la reserva (persona a nombre de quien está) */
   guestName: string;
   guestEmail: string;
   guestPhone: string;
   guestImg: string;
+  /** Cliente del sistema (usuario con cuenta que realizó la reserva; null si reserva sin cuenta) */
+  systemClientName: string | null;
+  systemClientEmail: string | null;
+  systemClientPhone: string | null;
   hotelName: string;
   hotelLocation: string;
   roomName: string;
@@ -32,6 +37,8 @@ type ReservationData = {
   amountPaid: number;
   status: string;
   createdAt: string;
+  /** Método de pago elegido en la reserva (ej. transfer, card, paypal) */
+  paymentMethod: string | null;
 } | null;
 
 function formatDate(d: string | null): string {
@@ -75,6 +82,27 @@ function getStatusBadgeClass(status: string): string {
     case 'CANCELADA': return 'bg-red-100 text-red-700';
     default: return 'bg-gray-100 text-gray-700';
   }
+}
+
+function getPaymentMethodLabel(method: string): string {
+  const labels: Record<string, string> = {
+    card: 'Tarjeta de crédito o débito',
+    paypal: 'PayPal',
+    openpay: 'Open Pay',
+    stripe: 'Stripe',
+    transfer: 'Transferencia o depósito bancario',
+  };
+  return labels[method] || method;
+}
+
+/** Formatea teléfono a "+## ## #### ####" (código país + 10 dígitos). Si solo hay 10 dígitos se asume +52 (México). */
+function formatPhoneDisplay(phone: string | null | undefined): string {
+  if (!phone || phone === '—') return '—';
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 10) return phone;
+  const country = digits.length >= 12 ? digits.slice(0, 2) : '52';
+  const rest = digits.length >= 12 ? digits.slice(2, 12) : digits.slice(-10);
+  return `+${country} ${rest.slice(0, 2)} ${rest.slice(2, 6)} ${rest.slice(6)}`;
 }
 
 // --- Customer Journey (solo datos actuales: created_at, check_in, check_out, status) ---
@@ -216,7 +244,7 @@ export const AdminReservationDetail: React.FC<AdminReservationDetailProps> = ({ 
       setError(null);
       const { data, error: err } = await supabase
         .from('reservations')
-        .select('id, user_id, hotel_id, room_id, check_in, check_out, total, amount_paid, status, guests, created_at, hotels(name, location, image), rooms(name, image)')
+        .select('id, user_id, hotel_id, room_id, check_in, check_out, total, amount_paid, status, guests, created_at, data, hotels(name, location, image), rooms(name, image)')
         .eq('id', reservationId)
         .single();
 
@@ -241,13 +269,29 @@ export const AdminReservationDetail: React.FC<AdminReservationDetailProps> = ({ 
       let guestEmail = '—';
       let guestPhone = '—';
       const userId = r.user_id as string | null;
+      const guestData = (r.data as { guest_first_name?: string; guest_last_name?: string; guest_email?: string; guest_phone?: string; guest_phone_lada?: string; payment_method?: string } | null) || null;
+      // Titular de la reserva: priorizar datos ingresados en el formulario (el usuario pudo reservar a nombre de otra persona)
+      const dataName = guestData ? [guestData.guest_first_name, guestData.guest_last_name].filter(Boolean).join(' ').trim() : '';
+      if (dataName || (guestData?.guest_email && guestData.guest_email.trim())) {
+        guestName = dataName || guestData?.guest_email || guestName;
+        guestEmail = (guestData?.guest_email && guestData.guest_email.trim()) ? guestData.guest_email : guestEmail;
+        if (guestData?.guest_phone) guestPhone = [guestData.guest_phone_lada, guestData.guest_phone].filter(Boolean).join(' ').trim() || '—';
+      }
+      let systemClientName: string | null = null;
+      let systemClientEmail: string | null = null;
+      let systemClientPhone: string | null = null;
       if (userId) {
         const { data: profileData } = await supabase.from('profiles').select('full_name, email, phone').eq('id', userId).single();
         const p = profileData as { full_name?: string; email?: string; phone?: string } | null;
         if (p) {
-          guestName = p.full_name || p.email || guestName;
-          guestEmail = p.email || guestEmail;
-          guestPhone = p.phone || guestPhone;
+          systemClientName = p.full_name || p.email || null;
+          systemClientEmail = p.email || null;
+          systemClientPhone = p.phone || null;
+          if (guestName === 'Sin nombre' && guestEmail === '—') {
+            guestName = p.full_name || p.email || guestName;
+            guestEmail = p.email || guestEmail;
+            guestPhone = p.phone || guestPhone;
+          }
         }
       }
 
@@ -258,6 +302,9 @@ export const AdminReservationDetail: React.FC<AdminReservationDetailProps> = ({ 
         guestEmail,
         guestPhone,
         guestImg: `https://ui-avatars.com/api/?name=${encodeURIComponent(guestName)}&background=random`,
+        systemClientName,
+        systemClientEmail,
+        systemClientPhone,
         hotelName: hotel?.name || '—',
         hotelLocation: hotel?.location || '',
         roomName: room?.name || '—',
@@ -270,6 +317,7 @@ export const AdminReservationDetail: React.FC<AdminReservationDetailProps> = ({ 
         amountPaid: Number(r.amount_paid) || 0,
         status: String(r.status || 'PENDIENTE'),
         createdAt: String(r.created_at || ''),
+        paymentMethod: guestData?.payment_method ?? null,
       });
       setLoading(false);
     })();
@@ -311,9 +359,30 @@ export const AdminReservationDetail: React.FC<AdminReservationDetailProps> = ({ 
     setIsAddingNote(false);
   };
 
+  const parsePaymentAmount = (raw: string): number => {
+    const t = raw.replace(/\s/g, '').trim();
+    if (!t) return 0;
+    const lastComma = t.lastIndexOf(',');
+    const lastDot = t.lastIndexOf('.');
+    let normalized = t;
+    if (lastComma > lastDot) {
+      normalized = t.replace(/\./g, '').replace(',', '.');
+    } else {
+      normalized = t.replace(/,/g, '');
+    }
+    const num = parseFloat(normalized);
+    return Number.isNaN(num) ? 0 : num;
+  };
+
+  const formatPaymentAmountInput = (raw: string): string => {
+    const num = parsePaymentAmount(raw);
+    if (num === 0 && !raw.trim()) return '';
+    return num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
   const handleRegisterPayment = async () => {
     if (!reservation || reservation.status === 'CANCELADA') return;
-    const value = parseFloat(paymentAmount.replace(',', '.'));
+    const value = parsePaymentAmount(paymentAmount);
     if (Number.isNaN(value) || value <= 0) {
       setError('Ingrese un monto válido.');
       return;
@@ -526,16 +595,45 @@ export const AdminReservationDetail: React.FC<AdminReservationDetailProps> = ({ 
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 flex flex-col gap-6">
+          {/* Cliente del sistema (usuario con cuenta) */}
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+            <div className="flex items-center gap-2 mb-6">
+              <span className="material-symbols-outlined text-primary text-[22px]">badge</span>
+              <h3 className="font-bold text-lg text-[#111827]">Cliente del sistema (usuario)</h3>
+            </div>
+            <p className="text-xs text-gray-500 mb-4">Usuario con cuenta que realizó la reserva.</p>
+            {reservation.systemClientName || reservation.systemClientEmail ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Nombre</p>
+                  <p className="font-bold text-[#111827]">{reservation.systemClientName || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Email</p>
+                  <p className="font-bold text-[#111827]">{reservation.systemClientEmail || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Teléfono</p>
+                  <p className="font-bold text-[#111827]">{formatPhoneDisplay(reservation.systemClientPhone)}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 italic">Reserva realizada sin cuenta (invitado).</p>
+            )}
+          </div>
+
+          {/* Titular de la reserva */}
           <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
             <div className="flex items-center gap-2 mb-6">
               <span className="material-symbols-outlined text-primary text-[22px]">person</span>
-              <h3 className="font-bold text-lg text-[#111827]">Datos del Cliente</h3>
+              <h3 className="font-bold text-lg text-[#111827]">Titular de la reserva</h3>
             </div>
+            <p className="text-xs text-gray-500 mb-4">Persona a nombre de quien está la reservación (datos ingresados en el formulario).</p>
             <div className="flex flex-col md:flex-row gap-6 items-center md:items-start">
               <img src={reservation.guestImg} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-white shadow-md" />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8 flex-1 w-full">
                 <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Nombre Completo</p>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Nombre completo</p>
                   <p className="font-bold text-[#111827]">{reservation.guestName}</p>
                 </div>
                 <div>
@@ -544,7 +642,7 @@ export const AdminReservationDetail: React.FC<AdminReservationDetailProps> = ({ 
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Teléfono</p>
-                  <p className="font-bold text-[#111827]">{reservation.guestPhone}</p>
+                  <p className="font-bold text-[#111827]">{formatPhoneDisplay(reservation.guestPhone)}</p>
                 </div>
               </div>
             </div>
@@ -595,6 +693,12 @@ export const AdminReservationDetail: React.FC<AdminReservationDetailProps> = ({ 
               <h3 className="font-bold text-lg text-[#111827]">Desglose de Pago</h3>
             </div>
             <div className="flex flex-col gap-4 mb-6">
+              {reservation.paymentMethod && (
+                <div className="flex justify-between text-sm items-center">
+                  <span className="text-gray-600">Método de pago</span>
+                  <span className="font-bold text-[#111827]">{getPaymentMethodLabel(reservation.paymentMethod)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-sm text-gray-500">
                 <span className="italic">{reservation.nights} noches</span>
                 <span className="font-bold text-[#111827]">{formatCurrency(reservation.total)}</span>
@@ -646,9 +750,16 @@ export const AdminReservationDetail: React.FC<AdminReservationDetailProps> = ({ 
                     <input
                       type="text"
                       inputMode="decimal"
-                      placeholder="Ej. 500"
+                      placeholder="Ej. 1,500.00"
                       value={paymentAmount}
-                      onChange={(e) => setPaymentAmount(e.target.value)}
+                      onChange={(e) => {
+                        const v = e.target.value.replace(/[^\d.,]/g, '').replace(/(\..*)\./, '$1').replace(/(,.*),/, '$1');
+                        setPaymentAmount(v);
+                      }}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (v && !Number.isNaN(parsePaymentAmount(v))) setPaymentAmount(formatPaymentAmountInput(v));
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                     <p className="text-xs text-gray-500">Máximo a registrar: {formatCurrency(reservation.total - reservation.amountPaid)}</p>
