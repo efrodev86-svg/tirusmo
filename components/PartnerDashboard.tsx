@@ -103,7 +103,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({ onLogout }) 
     <>
         {/* Top Header */}
         <header className="flex justify-between items-center mb-10">
-            <h1 className="text-2xl font-bold text-[#111827]">{partnerHotel ? `Panel de Gestión · ${partnerHotel.name}` : 'Panel de Gestión'}</h1>
+            <h1 className="text-2xl font-bold text-[#111827]">{partnerHotel ? `Panel del Hotel · ${partnerHotel.name}` : 'Panel del Hotel'}</h1>
             <div className="flex items-center gap-6">
                 <div className="flex items-center gap-2 text-gray-500 text-sm font-medium bg-white px-3 py-1.5 rounded-lg border border-gray-200">
                     <span className="material-symbols-outlined text-[18px]">calendar_today</span>
@@ -280,14 +280,14 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({ onLogout }) 
               return <DashboardContent />;
           case 'rooms':
               if (roomViewState === 'detail') {
-                  return <PartnerRoomDetail roomId={selectedRoomId} onBack={handleBackToInventory} />;
+                  return <PartnerRoomDetail hotelId={partnerHotel?.id ?? null} roomId={selectedRoomId} onBack={handleBackToInventory} />;
               }
-              return <PartnerRoomInventory onCreateRoom={handleCreateRoom} onEditRoom={handleEditRoom} />;
+              return <PartnerRoomInventory hotelId={partnerHotel?.id ?? null} onCreateRoom={handleCreateRoom} onEditRoom={handleEditRoom} />;
           case 'reservations':
               if (reservationViewState === 'detail' && selectedReservationId) {
                   return <PartnerReservationDetail reservationId={selectedReservationId} onBack={handleBackToReservations} />
               }
-              return <PartnerReservations onSelectReservation={handleSelectReservation} />;
+              return <PartnerReservations hotelId={partnerHotel?.id ?? null} onSelectReservation={handleSelectReservation} />;
           case 'blocks':
               if (blockViewState === 'create') {
                   return <PartnerBlockManager onBack={handleBackToBlocks} onConfirm={() => { alert('Bloqueo creado'); handleBackToBlocks(); }} />;
@@ -312,7 +312,7 @@ export const PartnerDashboard: React.FC<PartnerDashboardProps> = ({ onLogout }) 
              <span className="material-symbols-outlined text-[#10B981] text-2xl">hotel</span>
           </div>
           <div className="flex flex-col min-w-0">
-              <span className="font-bold text-sm leading-tight truncate">{partnerHotel?.name || 'Partner Portal'}</span>
+              <span className="font-bold text-sm leading-tight truncate">{partnerHotel?.name || 'Panel del Hotel'}</span>
               <span className="text-[10px] text-gray-400 font-medium">{partnerHotel ? partnerHotel.location : (loadingHotel ? 'Cargando...' : 'Sin hotel asignado')}</span>
           </div>
         </div>

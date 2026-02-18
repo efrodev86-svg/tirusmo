@@ -45,7 +45,7 @@ const VIEW_BREADCRUMB_LABEL: Record<ViewState, string> = {
   [ViewState.REGISTER]: 'Registro',
   [ViewState.RESET_PASSWORD]: 'Restablecer contraseña',
   [ViewState.ADMIN_DASHBOARD]: 'Admin',
-  [ViewState.PARTNER_DASHBOARD]: 'Socio',
+  [ViewState.PARTNER_DASHBOARD]: 'Panel del Hotel',
   [ViewState.CUSTOMER_DASHBOARD]: 'Mi cuenta',
   [ViewState.ABOUT_US]: 'Sobre nosotros',
   [ViewState.PRIVACY]: 'Privacidad',
