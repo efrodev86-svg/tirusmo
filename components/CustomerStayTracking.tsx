@@ -37,13 +37,17 @@ export const CustomerStayTracking: React.FC<CustomerStayTrackingProps> = ({ rese
     checkOut: string;
     guests: string;
     roomsCount: number;
+    mealPlan: string;
+    paymentMethod: string;
+    total: number;
+    amountPaid: number;
     amenities: string[];
     address: string;
-    /** Campo location del hotel (ubicación/dirección) */
     location: string;
-    /** Teléfono de contacto del hotel */
     hotelPhone: string | null;
   } | null>(null);
+  const [paymentHistory, setPaymentHistory] = useState<{ id: string; amount: number; paid_at: string; type: string }[]>([]);
+  const [paymentHistoryLoading, setPaymentHistoryLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [mapCoords, setMapCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [mapLoading, setMapLoading] = useState(false);
@@ -54,7 +58,7 @@ export const CustomerStayTracking: React.FC<CustomerStayTrackingProps> = ({ rese
       setLoading(true);
       const { data, error } = await supabase
         .from('reservations')
-        .select('id, check_in, check_out, guests, data, hotels(name, location, image, phone), rooms(name, amenities)')
+        .select('id, check_in, check_out, guests, total, amount_paid, data, hotels(name, location, image, phone), rooms(name, amenities)')
         .eq('id', reservationId)
         .single();
       if (cancelled) return;
@@ -69,8 +73,25 @@ export const CustomerStayTracking: React.FC<CustomerStayTrackingProps> = ({ rese
       const checkIn = r.check_in ? new Date(String(r.check_in)) : null;
       const checkOut = r.check_out ? new Date(String(r.check_out)) : null;
       const guestsNum = Number(r.guests ?? 1);
-      const reservationData = (r.data as { rooms?: number } | null) || {};
+      const reservationData = (r.data as { rooms?: number; meal_plan?: string; payment_method?: string } | null) || {};
       const roomsCount = Math.max(1, Number(reservationData.rooms) || 1);
+      const mealPlanLabel = (plan: string | undefined) => {
+        if (plan === 'desayuno') return 'Desayuno';
+        if (plan === 'todo_incluido') return 'Todo incluido';
+        if (plan === 'sin_plan') return 'Sin plan de alimentos';
+        return plan ? String(plan) : '—';
+      };
+      const getPaymentMethodLabel = (method: string | undefined): string => {
+        if (!method) return '—';
+        const labels: Record<string, string> = {
+          card: 'Tarjeta de crédito o débito',
+          paypal: 'PayPal',
+          openpay: 'Open Pay',
+          stripe: 'Stripe',
+          transfer: 'Transferencia o depósito bancario',
+        };
+        return labels[method] || method;
+      };
       const location = (hotel?.location && String(hotel.location).trim()) || '';
       const address = location || 'Sin dirección';
       setReservation({
@@ -82,6 +103,10 @@ export const CustomerStayTracking: React.FC<CustomerStayTrackingProps> = ({ rese
         checkOut: checkOut ? `${checkOut.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}, 12:00` : '—',
         guests: `${guestsNum} adulto(s)`,
         roomsCount,
+        mealPlan: mealPlanLabel(reservationData.meal_plan),
+        paymentMethod: getPaymentMethodLabel(reservationData.payment_method),
+        total: Number(r.total) || 0,
+        amountPaid: Number(r.amount_paid) || 0,
         amenities: Array.isArray(room?.amenities) ? room.amenities : ['Wi-Fi', 'Clima'],
         address,
         location: location || '—',
@@ -96,6 +121,31 @@ export const CustomerStayTracking: React.FC<CustomerStayTrackingProps> = ({ rese
           setMapLoading(false);
         }
       }
+    })();
+    return () => { cancelled = true; };
+  }, [reservationId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setPaymentHistoryLoading(true);
+      const { data, error } = await supabase
+        .from('reservation_payments')
+        .select('id, amount, paid_at, type')
+        .eq('reservation_id', reservationId)
+        .order('paid_at', { ascending: false });
+      if (cancelled) return;
+      if (!error && data) {
+        setPaymentHistory((data as { id: string; amount: number; paid_at: string; type: string }[]).map((p) => ({
+          id: p.id,
+          amount: Number(p.amount),
+          paid_at: p.paid_at,
+          type: p.type || 'anticipo',
+        })));
+      } else {
+        setPaymentHistory([]);
+      }
+      setPaymentHistoryLoading(false);
     })();
     return () => { cancelled = true; };
   }, [reservationId]);
@@ -265,6 +315,14 @@ export const CustomerStayTracking: React.FC<CustomerStayTrackingProps> = ({ rese
                             <span className="text-gray-500">Número de habitaciones</span>
                             <span className="font-bold text-[#111827]">{reservation.roomsCount}</span>
                         </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Plan de alimentos</span>
+                            <span className="font-bold text-[#111827]">{reservation.mealPlan}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Método de pago</span>
+                            <span className="font-bold text-[#111827]">{reservation.paymentMethod}</span>
+                        </div>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -274,6 +332,62 @@ export const CustomerStayTracking: React.FC<CustomerStayTrackingProps> = ({ rese
                             </span>
                         ))}
                     </div>
+                </div>
+            </div>
+
+            {/* Total de pago e historial */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+                <h3 className="font-bold text-[#111827] mb-4 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[20px] text-gray-500">receipt_long</span>
+                    Pago
+                </h3>
+                <div className="space-y-2 mb-4">
+                    <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Total a pagar</span>
+                        <span className="font-bold text-[#111827]">
+                            {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(reservation.total)}
+                        </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Pagado</span>
+                        <span className="font-bold text-[#111827]">
+                            {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(reservation.amountPaid)}
+                        </span>
+                    </div>
+                    <div className="flex justify-between text-sm pt-1 border-t border-gray-100">
+                        <span className="text-gray-500">Saldo pendiente</span>
+                        <span className={`font-bold ${reservation.total - reservation.amountPaid <= 0 ? 'text-green-600' : 'text-[#111827]'}`}>
+                            {reservation.total - reservation.amountPaid <= 0
+                              ? 'Pagado'
+                              : new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(reservation.total - reservation.amountPaid)}
+                        </span>
+                    </div>
+                </div>
+                <div>
+                    <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Historial de pagos</h4>
+                    {paymentHistoryLoading ? (
+                        <p className="text-sm text-gray-500">Cargando...</p>
+                    ) : paymentHistory.length === 0 ? (
+                        <p className="text-sm text-gray-500">Sin pagos registrados.</p>
+                    ) : (
+                        <ul className="space-y-2">
+                            {paymentHistory.map((p) => (
+                                <li key={p.id} className="flex justify-between items-center gap-2 text-sm py-1.5 border-b border-gray-100 last:border-0">
+                                    <div>
+                                        <span className="text-gray-600 block">
+                                            {new Date(p.paid_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                        <span className="text-xs text-gray-400">
+                                            {p.type === 'anticipo' ? 'Anticipo' : p.type === 'abono' ? 'Abono' : p.type === 'pago_final' ? 'Pago final' : p.type}
+                                        </span>
+                                    </div>
+                                    <span className="font-bold text-[#111827]">
+                                        {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(p.amount)}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
                 </div>
             </div>
 

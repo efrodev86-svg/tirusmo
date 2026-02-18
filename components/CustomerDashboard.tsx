@@ -22,10 +22,24 @@ interface UserReservationCard {
   hotelName: string;
   dates: string;
   details: string;
+  mealPlan: string;
+  paymentMethod: string;
   total: string;
   status: string;
   statusRaw: string;
   image: string;
+}
+
+function getPaymentMethodLabel(method: string | undefined): string {
+  if (!method) return '—';
+  const labels: Record<string, string> = {
+    card: 'Tarjeta de crédito o débito',
+    paypal: 'PayPal',
+    openpay: 'Open Pay',
+    stripe: 'Stripe',
+    transfer: 'Transferencia o depósito bancario',
+  };
+  return labels[method] || method;
 }
 
 function formatDateRange(checkIn: string | null, checkOut: string | null): string {
@@ -77,7 +91,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onLogout, 
       }
       const { data, error } = await supabase
         .from('reservations')
-        .select('id, check_in, check_out, total, status, guests, hotels(name, image), rooms(name)')
+        .select('id, check_in, check_out, total, status, guests, data, hotels(name, image), rooms(name)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
       if (cancelled) return;
@@ -88,9 +102,16 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onLogout, 
         return;
       }
       const list = (data || []) as Record<string, unknown>[];
+      const mealPlanLabel = (plan: string | undefined) => {
+        if (plan === 'desayuno') return 'Desayuno';
+        if (plan === 'todo_incluido') return 'Todo incluido';
+        if (plan === 'sin_plan') return 'Sin plan de alimentos';
+        return plan ? String(plan) : '—';
+      };
       const cards: UserReservationCard[] = list.map((r) => {
         const hotel = r.hotels as { name?: string; image?: string } | null;
         const room = r.rooms as { name?: string } | null;
+        const reservationData = (r.data as { meal_plan?: string; payment_method?: string } | null) || {};
         const checkIn = String(r.check_in ?? '');
         const checkOut = String(r.check_out ?? '');
         const guests = Number(r.guests ?? 1);
@@ -102,6 +123,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onLogout, 
           hotelName,
           dates: formatDateRange(checkIn || null, checkOut || null),
           details,
+          mealPlan: mealPlanLabel(reservationData.meal_plan),
+          paymentMethod: getPaymentMethodLabel(reservationData.payment_method),
           total: formatCurrency(Number(r.total ?? 0)),
           status: statusLabel,
           statusRaw: String(r.status || 'PENDIENTE'),
@@ -335,6 +358,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onLogout, 
                                             {res.dates}
                                             <span className="text-gray-300">|</span>
                                             {res.details}
+                                        </div>
+                                        <div className="text-sm text-gray-500 flex items-center gap-2 mt-1">
+                                            <span className="material-symbols-outlined text-[16px]">restaurant</span>
+                                            <span>Plan de alimentos: {res.mealPlan}</span>
+                                        </div>
+                                        <div className="text-sm text-gray-500 flex items-center gap-2 mt-1">
+                                            <span className="material-symbols-outlined text-[16px]">payments</span>
+                                            <span>Método de pago: {res.paymentMethod}</span>
                                         </div>
                                     </div>
                                     <div className="text-right">

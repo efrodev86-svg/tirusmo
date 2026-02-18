@@ -277,6 +277,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
           special_requests: guestDetails.specialRequests?.trim() || '',
           payment_method: paymentMethod,
           rooms: searchParams.guests?.rooms ?? 1,
+          meal_plan: selectedMealPlan ?? 'sin_plan',
         },
       };
       const { data: inserted, error: insertError } = await supabase
