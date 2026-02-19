@@ -89,10 +89,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onLogout, 
         setReservationsLoading(false);
         return;
       }
+      // RLS filtra: propias (user_id = usuario) y de invitado con mismo email (Usuario ve reservaciones invitado con su email)
       const { data, error } = await supabase
         .from('reservations')
         .select('id, check_in, check_out, total, status, guests, data, hotels(name, image), rooms(name)')
-        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
       if (cancelled) return;
       if (error) {

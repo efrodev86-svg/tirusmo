@@ -77,6 +77,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
   const [savingReservation, setSavingReservation] = useState(false);
   const [reservationError, setReservationError] = useState('');
   const [reservationId, setReservationId] = useState<string | null>(null);
+  const [wasGuestReservation, setWasGuestReservation] = useState(false);
 
   useEffect(() => {
     if (!hotel?.id) return;
@@ -243,12 +244,23 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
     return true;
   };
 
+  /**
+   * Lógica de reserva como invitado (sin cuenta ni sesión):
+   * - Si hay sesión: user_id = session.user.id (reserva ligada al usuario).
+   * - Si NO hay sesión: user_id = null → reserva como invitado; los datos del huésped
+   *   se guardan en data (guest_first_name, guest_last_name, guest_email, guest_phone, etc.).
+   * - La política RLS "Cualquiera puede crear reservación" permite INSERT con user_id null.
+   * - El invitado no tiene "Mis reservas" hasta que cree cuenta con el mismo email (flujo futuro).
+   */
   const handlePagarYConfirmar = async () => {
     if (!termsAccepted) return;
     setReservationError('');
     setSavingReservation(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      const isGuest = !session?.user;
+      setWasGuestReservation(isGuest);
+
       const checkIn = searchParams.checkIn?.trim() || new Date().toISOString().slice(0, 10);
       const checkOut = searchParams.checkOut?.trim() || checkIn;
       const guestCount = Math.max(1, (searchParams.guests?.adults ?? 1) + (searchParams.guests?.children ?? 0));
@@ -587,9 +599,11 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
                   <h3 className="text-lg font-bold mb-2 flex items-center gap-2 pb-2 border-b border-gray-100 dark:border-gray-800">
                       <span className="material-symbols-outlined text-primary">person</span> Información Personal
                   </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                      <strong className="text-[#111418] dark:text-white">Reserva como invitado:</strong> no necesitas crear cuenta ni iniciar sesión. Solo llena tus datos y continúa al pago.
+                  </p>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-                      La reservación quedará a nombre de la persona cuyos datos ingreses a continuación.
-                      Si estás logueado y quieres reservar a nombre de otra persona (familiar, amigo, etc.), puedes modificar los datos y se guardará a nombre de quien indiques.
+                      La reservación quedará a nombre de la persona cuyos datos ingreses. Si tienes sesión y quieres reservar a nombre de otra persona, puedes modificar los datos.
                   </p>
                   {formErrorMessage && (
                     <div className="mb-4 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 flex items-center gap-2 text-red-700 dark:text-red-300 text-sm">
@@ -1117,7 +1131,13 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
             <span className="material-symbols-outlined text-6xl text-green-600 dark:text-green-500 filled">check</span>
           </div>
           <h1 className="text-3xl font-black mb-2 text-center text-[#111418] dark:text-white">¡Reserva Confirmada!</h1>
-          <p className="text-gray-500 mb-8 text-center">Hemos enviado los detalles a <strong className="text-[#111418] dark:text-white">{guestDetails.email}</strong></p>
+          <p className="text-gray-500 mb-2 text-center">Hemos enviado los detalles a <strong className="text-[#111418] dark:text-white">{guestDetails.email}</strong></p>
+          {wasGuestReservation && (
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 text-center max-w-md mx-auto">
+              Reservaste como invitado. <strong>Guarda tu número de confirmación</strong> para cualquier consulta. Si después creas una cuenta con este correo, podrás ver esta reserva en Mi cuenta.
+            </p>
+          )}
+          {!wasGuestReservation && <div className="mb-6" />}
 
           <div className="bg-white dark:bg-[#1a222d] w-full rounded-2xl border border-[#e5e7eb] dark:border-[#2a3441] shadow-xl overflow-hidden mb-6">
             <div className="bg-gray-50 dark:bg-[#252e3a] px-6 py-4 border-b border-[#e5e7eb] dark:border-[#2a3441] flex justify-between items-center flex-wrap gap-2">
