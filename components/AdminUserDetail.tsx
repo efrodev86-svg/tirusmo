@@ -216,6 +216,23 @@ export const AdminUserDetail: React.FC<AdminUserDetailProps> = ({ userId, onBack
     setDeleting(true);
     setError(null);
     try {
+      // Eliminar de Auth para que el usuario no pueda volver a iniciar sesión
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-delete-user`;
+        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${anonKey}` },
+          body: JSON.stringify({ user_id: userId, access_token: session.access_token }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok && res.status !== 400) {
+          setError(data.error || `Error ${res.status}`);
+          return;
+        }
+        // 400 = usuario ya no existe en Auth; igual marcamos perfil como eliminado
+      }
       const { error: updateErr } = await supabase
         .from('profiles')
         .update({ deleted_at: new Date().toISOString() })

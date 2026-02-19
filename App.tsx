@@ -59,6 +59,7 @@ const App: React.FC = () => {
   const [dashboardAllowed, setDashboardAllowed] = useState<boolean | null>(null);
   const [headerUser, setHeaderUser] = useState<HeaderUser | null>(null);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  const [accountDeletedMessage, setAccountDeletedMessage] = useState<string | null>(null);
   const headerMenuRef = useRef<HTMLDivElement>(null);
   const [searchParams, setSearchParams] = useState<SearchParams>({
     destination: '',
@@ -193,10 +194,18 @@ const App: React.FC = () => {
     const updateHeaderUser = async (userId: string) => {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('full_name, user_type')
+        .select('full_name, user_type, deleted_at')
         .eq('id', userId)
         .maybeSingle();
-      const p = profile as { full_name?: string; user_type?: string } | null;
+      const p = profile as { full_name?: string; user_type?: string; deleted_at?: string | null } | null;
+      if (p?.deleted_at) {
+        await supabase.auth.signOut();
+        setHeaderUser(null);
+        setDashboardAllowed(null);
+        setAccountDeletedMessage('Tu cuenta ha sido eliminada. Ya no puedes iniciar sesión.');
+        setView(ViewState.LOGIN);
+        return;
+      }
       const name = p?.full_name?.trim() || '';
       const userType = (p?.user_type as 'cliente' | 'partner' | 'admin') ?? 'cliente';
       const { data: { user } } = await supabase.auth.getUser();
@@ -271,14 +280,22 @@ const App: React.FC = () => {
   };
 
   const handleLoginClick = async () => {
+    setAccountDeletedMessage(null);
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('user_type')
+        .select('user_type, deleted_at')
         .eq('id', session.user.id)
         .single();
-      const userType = (profile?.user_type as 'cliente' | 'partner' | 'admin') ?? 'cliente';
+      const p = profile as { user_type?: string; deleted_at?: string | null } | null;
+      if (p?.deleted_at) {
+        await supabase.auth.signOut();
+        setAccountDeletedMessage('Tu cuenta ha sido eliminada. Ya no puedes iniciar sesión.');
+        setView(ViewState.LOGIN);
+        return;
+      }
+      const userType = (p?.user_type as 'cliente' | 'partner' | 'admin') ?? 'cliente';
       handleLoginSuccess(userType);
     } else {
       setView(ViewState.LOGIN);
@@ -289,9 +306,10 @@ const App: React.FC = () => {
   if (view === ViewState.LOGIN) {
       return (
           <Login 
-            onBack={handleBackToHome} 
+            onBack={() => { setAccountDeletedMessage(null); handleBackToHome(); }} 
             onLoginSuccess={handleLoginSuccess}
             onRegisterClick={() => setView(ViewState.REGISTER)}
+            accountDeletedMessage={accountDeletedMessage}
           />
       );
   }

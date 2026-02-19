@@ -7,9 +7,10 @@ interface LoginProps {
   onBack: () => void;
   onLoginSuccess: (type: UserType) => void;
   onRegisterClick: () => void;
+  accountDeletedMessage?: string | null;
 }
 
-export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegisterClick }) => {
+export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegisterClick, accountDeletedMessage }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -53,11 +54,16 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
       if (!authData.user) return;
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('user_type, is_active')
+        .select('user_type, is_active, deleted_at')
         .eq('id', authData.user.id)
         .single();
       if (profileError || !profile) {
         setError(profileError?.message || 'Error al cargar el perfil');
+        return;
+      }
+      if ((profile as { deleted_at?: string | null }).deleted_at) {
+        await supabase.auth.signOut();
+        setError('Tu cuenta ha sido eliminada. Ya no puedes iniciar sesión.');
         return;
       }
       if (profile.is_active === false) {
@@ -130,6 +136,12 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Bienvenido de nuevo</h2>
           <p className="text-gray-500 text-sm">Accede a tu panel de gestión personalizada</p>
         </div>
+
+        {accountDeletedMessage && (
+          <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm">
+            {accountDeletedMessage}
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
