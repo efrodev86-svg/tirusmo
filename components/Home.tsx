@@ -233,7 +233,7 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
           </h2>
         </div>
 
-        <div className="relative z-30 w-full max-w-5xl bg-white dark:bg-gray-800/90 backdrop-blur-sm rounded-3xl shadow-2xl p-4 md:p-6">
+        <div className="relative z-50 w-full max-w-5xl bg-white dark:bg-gray-800/90 backdrop-blur-sm rounded-3xl shadow-2xl p-4 md:p-6">
           <div className="flex flex-col gap-5">
             {/* Fila 1: Destino y Presupuesto */}
             <p className="text-sm font-bold text-primary px-1">Ingresa</p>
@@ -251,6 +251,7 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
                       value={destination}
                       onChange={handleDestinationChange}
                       onFocus={handleDestinationFocus}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); setShowDestDropdown(false); handleSearchClick(); } }}
                     />
                   </div>
                 </label>
@@ -287,6 +288,7 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
                         setBudget(e.target.value.replace(/\D/g, ''));
                         setDestBudgetError(false);
                       }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSearchClick(); } }}
                     />
                   </div>
                 </label>
