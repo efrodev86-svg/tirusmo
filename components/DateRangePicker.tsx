@@ -5,6 +5,8 @@ interface DateRangePickerProps {
   checkOut: Date | null;
   onChange: (start: Date | null, end: Date | null) => void;
   onClose: () => void;
+  /** Si es true, no se muestran los botones "Cancelar" ni "Listo". */
+  hideFooter?: boolean;
 }
 
 const MONTH_NAMES = [
@@ -14,7 +16,7 @@ const MONTH_NAMES = [
 
 const DAYS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 
-export const DateRangePicker: React.FC<DateRangePickerProps> = ({ checkIn, checkOut, onChange, onClose }) => {
+export const DateRangePicker: React.FC<DateRangePickerProps> = ({ checkIn, checkOut, onChange, onClose, hideFooter }) => {
   // Mostrar mes actual y el siguiente
   const [viewDate, setViewDate] = useState(() => {
     const d = new Date();
@@ -177,10 +179,12 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ checkIn, check
             {renderMonth(1)}
           </div>
        </div>
-       <div className="p-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3 bg-gray-50 dark:bg-gray-800/50">
-          <button onClick={onClose} className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-lg transition-colors">Cancelar</button>
-          <button onClick={onClose} className="px-6 py-2 text-sm font-bold bg-primary text-white rounded-lg hover:bg-blue-600 shadow-lg shadow-primary/30 transition-all">Listo</button>
-       </div>
+       {!hideFooter && (
+         <div className="p-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3 bg-gray-50 dark:bg-gray-800/50">
+            <button onClick={onClose} className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded-lg transition-colors">Cancelar</button>
+            <button onClick={onClose} className="px-6 py-2 text-sm font-bold bg-primary text-white rounded-lg hover:bg-blue-600 shadow-lg shadow-primary/30 transition-all">Listo</button>
+         </div>
+       )}
     </div>
   );
 };

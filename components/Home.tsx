@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SearchParams } from '../types';
-import { getDestinations } from '../services/hotelService';
+import { getDestinations, getFeaturedHotels } from '../services/hotelService';
 import { DateRangePicker } from './DateRangePicker';
 import { GuestSelector } from './GuestSelector';
 import { supabase } from '../lib/supabase';
@@ -45,9 +45,23 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
   const [showDestDropdown, setShowDestDropdown] = useState(false);
   const destInputRef = useRef<HTMLInputElement>(null);
   const [userName, setUserName] = useState<string | null>(null);
+  const [featuredHotels, setFeaturedHotels] = useState<{ id: number; name: string; location: string; price: number; image: string; rating: number }[]>([]);
 
   useEffect(() => {
     getDestinations().then(setDestinations);
+  }, []);
+
+  useEffect(() => {
+    getFeaturedHotels().then((list) => {
+      setFeaturedHotels(list.map((h) => ({
+        id: h.id,
+        name: h.name,
+        location: h.location,
+        price: h.price,
+        image: h.image || '',
+        rating: h.rating,
+      })));
+    });
   }, []);
 
   useEffect(() => {
@@ -395,43 +409,40 @@ const Home: React.FC<HomeProps> = ({ onSearch, onSelectFeatured }) => {
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-           {/* Manually rendering 3 featured cards for the home page as per design */}
-           {[1, 4, 2].map((id) => {
-               // We need to fetch real data here synchronously for the render, in a real app this is async
-               // For this demo we use the imported list directly for initial render
-               const hotel = {
-                   1: { name: "Grand Velas Riviera Maya", price: 520, img: "https://lh3.googleusercontent.com/aida-public/AB6AXuB_TngrjqdbIZwcV5fo-_OSPUz_5eKC4IGECyrr8Dccp7pucUhxYV9BWsMV99xM4mNoyR1AuisjAFjjAd2apKiUSPlZ_uBbn67DtQD-kyKrj6bZtiuEB5DonBYgUnMB9lAw1ZC2gSiD9NLt4IZuvYBHCwo3d3u0jjJn37EClAPDS571Wdfg_d8t4ypmIDQ3oSfS8RA3R_sBjIG9rO0v4EFbfkkm7Cx-QJXmbm7yWeqRhGW9twljJIojTYFfg_xQCxJy4qnwg3z-Wg", loc: "Playa del Carmen", rating: 4.9 },
-                   4: { name: "Le Blanc Spa Resort", price: 620, img: "https://lh3.googleusercontent.com/aida-public/AB6AXuAP3pLgh2y6TTH9MWzXMUWpr3UsqYEa5HnrYpKUF4HoNHzCaq1N-mtHns-GaRnq5zh0_UgKocBzYaXzlhuBF0Vi6jD-gwqlGyqZa70fwyGeU6rBVSfz-EY_yJBZx-yAbI15V8nhp_8ksTQaXq9pSuK5IH9McYauZMvLBnsG-IdH4dr8kKdBJWBiazXque5PAKY-_fYwVBe3pyX3XtZ_ka1dI0_cDMKVYRGCyYMyBEABqDM9wBM805itA_UYUhzJIk-jmBwEdal38Q", loc: "Cancún", rating: 4.9 },
-                   2: { name: "Banyan Tree Mayakoba", price: 890, img: "https://lh3.googleusercontent.com/aida-public/AB6AXuCux6AX2LOwRPThlnnzxt4dZQ8-03244X7FYOtT1KjTAq-mvy4mZn9SE6edFKdCdmRHUF634BNntSHj5T7OeUPn5ABjICKJMY0YzgwdP7td_Sjjx-WnBPUTXzf2r3C6wSvgCuTte-d05R4b-lUh6mK5dNHPCcGY7v_7YH-Ii4cpzH47MY4J3qftkKaNVvq39uWiKKeZyQcwWJjqgbOgRZLonkk589Kl8xj8yd90q3PVZNlLJHUCTJ-PSqokleRTJSZ-rWGfo3etAQ", loc: "Riviera Maya", rating: 4.8 }
-               }[id] as any;
-
-               return (
-                <div key={id} className="flex flex-col gap-3 group/card cursor-pointer" onClick={() => onSelectFeatured(id)}>
-                    <div className="relative w-full aspect-[4/3] rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800 shadow-sm group-hover/card:shadow-md transition-shadow">
-                    <div className="absolute top-3 right-3 bg-white/90 dark:bg-black/70 backdrop-blur px-2 py-1 rounded-md flex items-center gap-1 z-10 shadow-sm">
-                        <span className="material-symbols-outlined text-yellow-500 text-[16px] filled">star</span>
-                        <span className="text-xs font-bold dark:text-white">{hotel.rating}</span>
-                    </div>
-                    <img alt={hotel.name} className="h-full w-full object-cover group-hover/card:scale-105 transition-transform duration-500" src={hotel.img}/>
-                    </div>
-                    <div className="flex flex-col gap-1 px-1">
-                    <div className="flex justify-between items-start">
-                        <h3 className="text-lg font-bold text-[#111418] dark:text-white line-clamp-1 group-hover/card:text-primary transition-colors">{hotel.name}</h3>
-                        <div className="text-right">
-                        <p className="text-lg font-bold text-[#111418] dark:text-white">${hotel.price}</p>
-                        </div>
-                    </div>
-                    <div className="flex justify-between items-center text-sm text-[#617289] dark:text-gray-400">
-                        <div className="flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[16px]">location_on</span>
-                        <span className="truncate max-w-[150px]">{hotel.loc}</span>
-                        </div>
-                        <span>/noche</span>
-                    </div>
-                    </div>
+          {featuredHotels.slice(0, 3).map((hotel) => (
+            <div
+              key={hotel.id}
+              className="flex flex-col gap-3 group/card cursor-pointer"
+              onClick={() => onSelectFeatured(hotel.id)}
+            >
+              <div className="relative w-full aspect-[4/3] rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800 shadow-sm group-hover/card:shadow-md transition-shadow">
+                <div className="absolute top-3 right-3 bg-white/90 dark:bg-black/70 backdrop-blur px-2 py-1 rounded-md flex items-center gap-1 z-10 shadow-sm">
+                  <span className="material-symbols-outlined text-yellow-500 text-[16px] filled">star</span>
+                  <span className="text-xs font-bold dark:text-white">{hotel.rating}</span>
                 </div>
-               );
-           })}
+                <img
+                  alt={hotel.name}
+                  className="h-full w-full object-cover group-hover/card:scale-105 transition-transform duration-500"
+                  src={hotel.image || 'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=800'}
+                />
+              </div>
+              <div className="flex flex-col gap-1 px-1">
+                <div className="flex justify-between items-start">
+                  <h3 className="text-lg font-bold text-[#111418] dark:text-white line-clamp-1 group-hover/card:text-primary transition-colors">{hotel.name}</h3>
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-[#111418] dark:text-white">${hotel.price}</p>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center text-sm text-[#617289] dark:text-gray-400">
+                  <div className="flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[16px]">location_on</span>
+                    <span className="truncate max-w-[150px]">{hotel.location}</span>
+                  </div>
+                  <span>/noche</span>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

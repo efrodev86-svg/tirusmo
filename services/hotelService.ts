@@ -118,6 +118,23 @@ export const getHotels = async (): Promise<Hotel[]> => {
 };
 
 /**
+ * Obtiene los 3 hoteles destacados para la Home (por rating descendente).
+ */
+export const getFeaturedHotels = async (): Promise<Hotel[]> => {
+  const { data, error } = await supabase
+    .from('hotels')
+    .select('id, name, location, state, country, phone, price, rating, reviews, image, amenities, stars, description, tags, "isSoldOut", pet_friendly, travel_styles, meal_plans')
+    .order('rating', { ascending: false })
+    .limit(3);
+
+  if (error) {
+    console.warn('Error al cargar hoteles destacados:', error.message);
+    return [];
+  }
+  return (data ?? []).map((row) => mapRowToHotel(row as HotelRow));
+};
+
+/**
  * Obtiene un hotel por ID desde Supabase (para la página de reserva al abrir por URL).
  */
 export const getHotelById = async (id: number): Promise<Hotel | undefined> => {

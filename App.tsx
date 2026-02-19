@@ -465,23 +465,6 @@ const App: React.FC = () => {
           </div>
         </div>
         </div>
-        {/* Rutas / breadcrumb */}
-        <div className="px-6 lg:px-10 pb-2 pt-0 flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
-          <span className="text-gray-400 dark:text-gray-500">Ruta:</span>
-          {view === ViewState.HOME ? (
-            <span className="font-medium text-gray-700 dark:text-gray-300">Inicio</span>
-          ) : (
-            <>
-              <button type="button" onClick={handleBackToHome} className="hover:text-primary transition-colors">Inicio</button>
-              <span aria-hidden>/</span>
-              <span className="font-medium text-gray-700 dark:text-gray-300">{VIEW_BREADCRUMB_LABEL[view]}</span>
-            </>
-          )}
-          <span className="ml-1 text-gray-400 dark:text-gray-500 font-mono text-xs" title="URL actual">
-            {VIEW_TO_PATH[view]}
-            {view === ViewState.BOOKING && selectedHotel ? `?hotel=${selectedHotel.id}` : ''}
-          </span>
-        </div>
       </header>
 
       {/* Main Content Router */}
@@ -496,6 +479,7 @@ const App: React.FC = () => {
         {view === ViewState.RESULTS && (
           <SearchResults 
             searchParams={searchParams} 
+            onSearchParamsChange={(patch) => setSearchParams(prev => ({ ...prev, ...patch }))}
             onSelectHotel={handleSelectHotel} 
             onBack={handleBackToHome}
           />

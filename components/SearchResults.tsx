@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { SearchParams, Hotel } from '../types';
-import { getHotels } from '../services/hotelService';
+import { getHotels, getDestinations } from '../services/hotelService';
 import { supabase } from '../lib/supabase';
+import { DateRangePicker } from './DateRangePicker';
 
 type AmenityItem = { slug: string; label: string; category: string; sort_order: number };
 
@@ -27,11 +28,12 @@ const parsePriceInput = (s: string) => {
 
 interface SearchResultsProps {
   searchParams: SearchParams;
+  onSearchParamsChange?: (patch: Partial<SearchParams>) => void;
   onSelectHotel: (hotel: Hotel) => void;
   onBack: () => void;
 }
 
-const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHotel, onBack }) => {
+const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSearchParamsChange, onSelectHotel, onBack }) => {
   const [hotels, setHotels] = useState<Hotel[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -45,12 +47,38 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
   const [expandedAmenityCategories, setExpandedAmenityCategories] = useState<Set<string>>(new Set());
   const [headerTravelStyles, setHeaderTravelStyles] = useState<string[]>(searchParams.travelStyles ?? []);
   const [priceSort, setPriceSort] = useState<'mayor_precio' | 'menor_precio' | ''>('');
-
+  const [nuevaBusquedaExpanded, setNuevaBusquedaExpanded] = useState(false);
+  const [destinations, setDestinations] = useState<string[]>([]);
+  const [nuevaBusquedaDestino, setNuevaBusquedaDestino] = useState(searchParams.destination);
+  const [nuevaBusquedaGuests, setNuevaBusquedaGuests] = useState(searchParams.guests);
+  const [nuevaBusquedaCheckIn, setNuevaBusquedaCheckIn] = useState(searchParams.checkIn);
+  const [nuevaBusquedaCheckOut, setNuevaBusquedaCheckOut] = useState(searchParams.checkOut);
+  const [showNuevaBusquedaDatePicker, setShowNuevaBusquedaDatePicker] = useState(false);
+  const nuevaBusquedaDatePickerRef = useRef<HTMLDivElement>(null);
   const PLAN_OPTIONS = [
     { value: 'desayuno', label: 'Desayuno' },
     { value: 'todo_incluido', label: 'Todo incluido' },
     { value: 'sin_plan', label: 'Sin plan de alimentos' },
   ] as const;
+
+  const parseDateNuevaBusqueda = (dateString: string): Date | null => {
+    if (!dateString) return null;
+    const [y, m, d] = dateString.split('-').map(Number);
+    if (Number.isNaN(y) || Number.isNaN(m) || Number.isNaN(d)) return null;
+    return new Date(y, m - 1, d);
+  };
+  const formatDateNuevaBusqueda = (d: Date): string => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const formatDateDisplayNuevaBusqueda = (dateString: string) => {
+    if (!dateString) return '…';
+    const date = parseDateNuevaBusqueda(dateString);
+    if (!date) return '…';
+    return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+  };
 
   useEffect(() => {
     getHotels().then(data => {
@@ -58,6 +86,31 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
       setLoading(false);
     });
   }, []);
+
+  useEffect(() => {
+    getDestinations().then(setDestinations);
+  }, []);
+
+  useEffect(() => {
+    if (nuevaBusquedaExpanded) {
+      setNuevaBusquedaDestino(searchParams.destination);
+      setNuevaBusquedaGuests(searchParams.guests);
+      setNuevaBusquedaCheckIn(searchParams.checkIn);
+      setNuevaBusquedaCheckOut(searchParams.checkOut);
+    }
+  }, [nuevaBusquedaExpanded, searchParams.destination, searchParams.guests, searchParams.checkIn, searchParams.checkOut]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (nuevaBusquedaDatePickerRef.current && !nuevaBusquedaDatePickerRef.current.contains(e.target as Node)) {
+        setShowNuevaBusquedaDatePicker(false);
+      }
+    };
+    if (showNuevaBusquedaDatePicker) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showNuevaBusquedaDatePicker]);
 
   useEffect(() => {
     supabase
@@ -305,10 +358,127 @@ const SearchResults: React.FC<SearchResultsProps> = ({ searchParams, onSelectHot
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8 relative">
-        {/* Filters Sidebar */}
-        <aside className="w-full lg:w-[300px] flex-none space-y-6">
+        {/* Filters Sidebar: z-30 para que el calendario y demás dropdowns queden por encima de la lista de hoteles */}
+        <aside className="w-full lg:w-[300px] flex-none space-y-6 relative z-30">
           <div className="lg:sticky lg:top-24 space-y-6">
             <div className="bg-white dark:bg-[#1a2634] p-6 rounded-xl border border-[#e5e7eb] dark:border-gray-800 shadow-sm">
+              {/* Nueva búsqueda (colapsada por defecto) */}
+              <div className="mb-6">
+                <button
+                  type="button"
+                  onClick={() => setNuevaBusquedaExpanded((prev) => !prev)}
+                  className="flex items-center justify-between w-full text-left group"
+                  aria-expanded={nuevaBusquedaExpanded}
+                >
+                  <span className="text-[#111418] dark:text-gray-200 text-sm font-semibold">Nueva búsqueda</span>
+                  <span
+                    className="material-symbols-outlined text-[22px] text-[#617289] dark:text-gray-400 flex-shrink-0 transition-transform duration-200"
+                    style={{ transform: nuevaBusquedaExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                  >
+                    expand_more
+                  </span>
+                </button>
+                {nuevaBusquedaExpanded && (
+                  <div className="mt-4 space-y-4 pt-2 border-t border-[#f0f2f4] dark:border-gray-700">
+                    <div>
+                      <label className="text-[10px] text-[#617289] dark:text-gray-400 uppercase font-bold mb-1 block">Destino</label>
+                      <input
+                        type="text"
+                        list="nueva-busqueda-destinations"
+                        className="w-full px-3 py-2 border border-[#dbe0e6] dark:border-gray-700 dark:bg-gray-800 rounded-lg text-sm text-[#111418] dark:text-gray-200 placeholder:text-gray-400 focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                        placeholder="Ej. Cancún, Riviera Maya..."
+                        value={nuevaBusquedaDestino}
+                        onChange={(e) => setNuevaBusquedaDestino(e.target.value)}
+                      />
+                      <datalist id="nueva-busqueda-destinations">
+                        {destinations.map((d) => (
+                          <option key={d} value={d} />
+                        ))}
+                      </datalist>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-[#617289] dark:text-gray-400 uppercase font-bold mb-2 block">Huéspedes</label>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-[#111418] dark:text-gray-200">Adultos</span>
+                          <div className="flex items-center gap-2">
+                            <button type="button" onClick={() => setNuevaBusquedaGuests(g => ({ ...g, adults: Math.max(1, g.adults - 1) }))} disabled={nuevaBusquedaGuests.adults <= 1} className="w-8 h-8 rounded-full border border-[#dbe0e6] dark:border-gray-600 flex items-center justify-center text-[#111418] dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">−</button>
+                            <span className="min-w-[1.5rem] text-center text-sm font-medium">{nuevaBusquedaGuests.adults}</span>
+                            <button type="button" onClick={() => setNuevaBusquedaGuests(g => ({ ...g, adults: Math.min(20, g.adults + 1) }))} disabled={nuevaBusquedaGuests.adults >= 20} className="w-8 h-8 rounded-full border border-[#dbe0e6] dark:border-gray-600 flex items-center justify-center text-[#111418] dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">+</button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-[#111418] dark:text-gray-200">Menores</span>
+                          <div className="flex items-center gap-2">
+                            <button type="button" onClick={() => setNuevaBusquedaGuests(g => ({ ...g, children: Math.max(0, g.children - 1) }))} disabled={nuevaBusquedaGuests.children <= 0} className="w-8 h-8 rounded-full border border-[#dbe0e6] dark:border-gray-600 flex items-center justify-center text-[#111418] dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">−</button>
+                            <span className="min-w-[1.5rem] text-center text-sm font-medium">{nuevaBusquedaGuests.children}</span>
+                            <button type="button" onClick={() => setNuevaBusquedaGuests(g => ({ ...g, children: Math.min(20, g.children + 1) }))} disabled={nuevaBusquedaGuests.children >= 20} className="w-8 h-8 rounded-full border border-[#dbe0e6] dark:border-gray-600 flex items-center justify-center text-[#111418] dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">+</button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-[#111418] dark:text-gray-200">Habitaciones</span>
+                          <div className="flex items-center gap-2">
+                            <button type="button" onClick={() => setNuevaBusquedaGuests(g => ({ ...g, rooms: Math.max(1, g.rooms - 1) }))} disabled={nuevaBusquedaGuests.rooms <= 1} className="w-8 h-8 rounded-full border border-[#dbe0e6] dark:border-gray-600 flex items-center justify-center text-[#111418] dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">−</button>
+                            <span className="min-w-[1.5rem] text-center text-sm font-medium">{nuevaBusquedaGuests.rooms}</span>
+                            <button type="button" onClick={() => setNuevaBusquedaGuests(g => ({ ...g, rooms: Math.min(10, g.rooms + 1) }))} disabled={nuevaBusquedaGuests.rooms >= 10} className="w-8 h-8 rounded-full border border-[#dbe0e6] dark:border-gray-600 flex items-center justify-center text-[#111418] dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50">+</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div ref={nuevaBusquedaDatePickerRef} className="px-4 py-2 rounded-xl border border-gray-100 dark:border-gray-700 relative">
+                      <label
+                        className="flex flex-col cursor-pointer group w-full"
+                        onClick={() => setShowNuevaBusquedaDatePicker((prev) => !prev)}
+                      >
+                        <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1 group-hover:text-primary transition-colors">Entrada - Salida</span>
+                        <div className="flex items-center gap-2 relative">
+                          <span className="material-symbols-outlined text-gray-400 text-lg group-hover:text-primary">calendar_month</span>
+                          <div className="flex-1 text-sm font-semibold text-gray-900 dark:text-white truncate">
+                            {nuevaBusquedaCheckIn
+                              ? nuevaBusquedaCheckOut
+                                ? `${formatDateDisplayNuevaBusqueda(nuevaBusquedaCheckIn)} - ${formatDateDisplayNuevaBusqueda(nuevaBusquedaCheckOut)}`
+                                : `${formatDateDisplayNuevaBusqueda(nuevaBusquedaCheckIn)} — Elige salida`
+                              : 'Agregar fechas'}
+                          </div>
+                        </div>
+                      </label>
+                      {showNuevaBusquedaDatePicker && (
+                        <div className="absolute top-full left-0 mt-4 z-[9999] w-[300px] md:w-[650px]">
+                          <DateRangePicker
+                            checkIn={parseDateNuevaBusqueda(nuevaBusquedaCheckIn)}
+                            checkOut={parseDateNuevaBusqueda(nuevaBusquedaCheckOut)}
+                            onChange={(start, end) => {
+                              if (start) setNuevaBusquedaCheckIn(formatDateNuevaBusqueda(start));
+                              if (end) setNuevaBusquedaCheckOut(formatDateNuevaBusqueda(end));
+                              else setNuevaBusquedaCheckOut('');
+                            }}
+                            onClose={() => setShowNuevaBusquedaDatePicker(false)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSearchParamsChange?.({
+                          destination: nuevaBusquedaDestino,
+                          guests: nuevaBusquedaGuests,
+                          checkIn: nuevaBusquedaCheckIn,
+                          checkOut: nuevaBusquedaCheckOut,
+                        });
+                        setNuevaBusquedaExpanded(false);
+                      }}
+                      className="w-full py-2.5 px-4 bg-primary text-white text-sm font-bold rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">search</span>
+                      Nueva búsqueda
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <hr className="border-[#f0f2f4] dark:border-gray-700 my-6" />
+
               <div className="flex justify-between items-center mb-6">
                 <h3 className="font-bold text-lg dark:text-white">Filtros</h3>
                 <button className="text-xs font-semibold text-primary hover:underline" onClick={() => { setPriceRange([priceBounds.min, priceBounds.max]); setSelectedStars([]); setSelectedAmenities([]); setSelectedPlans([]); setSelectedPetFriendly(searchParams.petFriendly ?? false); }}>Limpiar todo</button>
