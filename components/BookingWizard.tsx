@@ -270,17 +270,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
         setSavingReservation(false);
         return;
       }
-      const payload = {
-        user_id: session?.user?.id ?? null,
-        hotel_id: hotel.id,
-        room_id: roomId,
-        check_in: checkIn,
-        check_out: checkOut,
-        total: Number(total.toFixed(2)),
-        status: 'PENDIENTE',
-        guests: guestCount,
-        amount_paid: 0,
-        data: {
+      const dataPayload = {
           guest_first_name: guestDetails.firstName?.trim() || '',
           guest_last_name: guestDetails.lastName?.trim() || '',
           guest_email: guestDetails.email?.trim() || '',
@@ -290,21 +280,55 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
           payment_method: paymentMethod,
           rooms: searchParams.guests?.rooms ?? 1,
           meal_plan: selectedMealPlan ?? 'sin_plan',
-        },
-      };
-      const { data: inserted, error: insertError } = await supabase
-        .from('reservations')
-        .insert(payload)
-        .select('id')
-        .single();
+        };
+      let insertedId: string | null = null;
 
-      if (insertError) {
-        setReservationError(insertError.message || 'No se pudo guardar la reserva. Intenta de nuevo.');
-        setSavingReservation(false);
-        return;
+      if (isGuest) {
+        // Invitado: usar RPC que bypasea RLS (evita error "new row violates row-level security policy")
+        const { data: rpcId, error: rpcError } = await supabase.rpc('insert_reservation_guest', {
+          p_user_id: null,
+          p_hotel_id: hotel.id,
+          p_room_id: roomId,
+          p_check_in: checkIn,
+          p_check_out: checkOut,
+          p_total: Number(total.toFixed(2)),
+          p_guests: guestCount,
+          p_data: dataPayload,
+        });
+        if (rpcError) {
+          setReservationError(rpcError.message || 'No se pudo guardar la reserva. Intenta de nuevo.');
+          setSavingReservation(false);
+          return;
+        }
+        insertedId = typeof rpcId === 'string' ? rpcId : rpcId ?? null;
+      } else {
+        const payload = {
+          user_id: session?.user?.id ?? null,
+          hotel_id: hotel.id,
+          room_id: roomId,
+          check_in: checkIn,
+          check_out: checkOut,
+          total: Number(total.toFixed(2)),
+          status: 'PENDIENTE',
+          guests: guestCount,
+          amount_paid: 0,
+          data: dataPayload,
+        };
+        const { data: inserted, error: insertError } = await supabase
+          .from('reservations')
+          .insert(payload)
+          .select('id')
+          .single();
+        if (insertError) {
+          setReservationError(insertError.message || 'No se pudo guardar la reserva. Intenta de nuevo.');
+          setSavingReservation(false);
+          return;
+        }
+        insertedId = inserted?.id ?? null;
       }
-      if (inserted?.id) {
-        setReservationId(inserted.id);
+
+      if (insertedId) {
+        setReservationId(insertedId);
         setStep(BookingStep.CONFIRMATION);
       } else {
         setReservationError('No se recibió confirmación. Intenta de nuevo.');
