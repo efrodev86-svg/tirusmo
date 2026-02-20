@@ -286,7 +286,7 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
              <a href="#" className="hover:text-white">Cookies</a>
          </div>
          <div>
-             © 2024 Escapar.mx. Todos los derechos reservados.
+             © 2026 Escapar.mx. Todos los derechos reservados.
          </div>
       </div>
     </div>

@@ -566,7 +566,7 @@ const App: React.FC = () => {
             </div>
         </div>
         <div className="max-w-[1200px] mx-auto mt-12 pt-8 border-t border-gray-100 dark:border-gray-800 text-center">
-            <p className="text-xs text-gray-400">© 2024 Escapar.mx. Todos los derechos reservados.</p>
+            <p className="text-xs text-gray-400">© 2026 Escapar.mx. Todos los derechos reservados.</p>
         </div>
       </footer>
     </div>

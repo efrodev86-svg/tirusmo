@@ -9,6 +9,32 @@ const STICKY_TOP_PX = 24;
 const formatCantidad = (n: number): string =>
   n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/** Convierte el logo SVG en una imagen PNG (data URL) para insertar en el PDF. */
+const getLogoAsImageDataUrl = (): Promise<string | null> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = '/favicon.svg';
+  });
+};
+
 const LADA_COUNTRIES: { code: string; flag: string; name: string }[] = [
   { code: '+52', flag: '🇲🇽', name: 'México' },
   { code: '+1', flag: '🇺🇸', name: 'Estados Unidos' },
@@ -1017,134 +1043,143 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
     return confirmationNumberRef.current;
   };
 
-  const downloadReservationPdf = () => {
-    const mealPlanLabel = selectedMealPlan === 'desayuno' ? 'Desayuno' : selectedMealPlan === 'todo_incluido' ? 'Todo incluido' : selectedMealPlan === 'sin_plan' ? 'Sin plan de alimentos' : 'Sin plan';
-    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-    const margin = 20;
-    const pageW = 210;
-    const col2X = 105;
+  const downloadReservationPdf = async () => {
+    const doc = new jsPDF({ unit: 'mm', format: 'letter', orientation: 'portrait' });
+    const margin = 15;
+    const pageW = 215.9; // Letter width in mm
     let y = margin;
-    const lineHeight = 6;
-    const sectionGap = 6;
-    const cPrimary = { r: 43, g: 119, b: 238 };
-    const cDark = { r: 45, g: 45, b: 45 };
-    const cLabel = { r: 90, g: 90, b: 90 };
-    const cValue = { r: 30, g: 30, b: 30 };
-    const cFooter = { r: 115, g: 115, b: 115 };
 
-    const addLine = (label: string, value: string, xLabel = margin, xValue = margin + 75, valueBold = false, valueColor: { r: number; g: number; b: number } | null = null) => {
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(cLabel.r, cLabel.g, cLabel.b);
-      doc.text(label, xLabel, y);
-      doc.setFont('helvetica', valueBold ? 'bold' : 'normal');
-      doc.setTextColor(valueColor ? valueColor.r : cValue.r, valueColor ? valueColor.g : cValue.g, valueColor ? valueColor.b : cValue.b);
-      doc.text(value, xValue, y);
-      y += lineHeight;
-    };
-    const addSection = (title: string) => {
-      y += sectionGap;
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(cDark.r, cDark.g, cDark.b);
-      doc.text(title, margin, y);
-      y += lineHeight + 2;
-    };
-
-    // Igual que pantalla de confirmación: Número de confirmación + # en color primary
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(cDark.r, cDark.g, cDark.b);
-    doc.text('Número de confirmación', margin, y);
-    doc.setFontSize(18);
-    doc.setTextColor(cPrimary.r, cPrimary.g, cPrimary.b);
-    doc.text(`#${getConfirmationNumber()}`, margin + 52, y - 0.5);
-    y += lineHeight + 4;
-    doc.setDrawColor(cPrimary.r, cPrimary.g, cPrimary.b);
-    doc.setLineWidth(0.4);
-    doc.line(margin, y, pageW - margin, y);
-    y += 5;
-
-    addSection('Lugar');
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    addLine('Hotel:', hotel.name);
-    addLine('Ubicación:', [hotel.location, hotel.state, hotel.country].filter(Boolean).join(', '));
-    if (hotel.phone) addLine('Teléfono del hotel:', hotel.phone);
-
-    // Fechas y Huéspedes en dos columnas (igual que pantalla de confirmación)
-    addSection('');
-    y -= lineHeight + 2;
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(cDark.r, cDark.g, cDark.b);
-    doc.text('Fechas', margin, y);
-    doc.text('Huéspedes', col2X, y);
-    y += lineHeight + 2;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-
-    const addRow = (leftLabel: string, leftVal: string, rightLabel: string, rightVal: string) => {
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(cLabel.r, cLabel.g, cLabel.b);
-      if (leftLabel) doc.text(leftLabel, margin, y);
-      if (rightLabel) doc.text(rightLabel, col2X, y);
-      doc.setTextColor(cValue.r, cValue.g, cValue.b);
-      if (leftVal) doc.text(leftVal, margin + 28, y);
-      if (rightVal) doc.text(rightVal, col2X + 28, y);
-      y += lineHeight;
-    };
-    addRow('Check-in:', searchParams.checkIn, 'Titular:', `${guestDetails.firstName} ${guestDetails.lastName}`);
-    addRow('', '15:00 hrs', 'Correo:', guestDetails.email);
-    addRow('Check-out:', searchParams.checkOut, 'Teléfono:', guestDetails.phone ? `${phoneLada} ${guestDetails.phone}` : '—');
-    addRow('', '12:00 hrs', '', '');
+    const mealPlanLabel = selectedMealPlan === 'desayuno' ? 'Desayuno' : selectedMealPlan === 'todo_incluido' ? 'Todo incluido' : selectedMealPlan === 'sin_plan' ? 'Sin plan de alimentos' : 'Sin plan';
+    const confNum = getConfirmationNumber();
     const personasStr = `${searchParams.guests.adults} adulto(s)${searchParams.guests.children > 0 ? `, ${searchParams.guests.children} niño(s)` : ''} · ${searchParams.guests.rooms} habitación(es)`;
-    addRow('Noches:', String(nights), 'Personas:', personasStr);
 
-    addSection('Habitación');
-    addLine('Tipo:', selectedRoom?.name ?? 'Habitación estándar');
-    if (selectedRoom?.type) addLine('Categoría:', selectedRoom.type);
-    addLine('Precio/noche:', `$${formatCantidad(roomPrice)}`);
-    if (selectedRoom?.amenities?.length) addLine('Amenidades:', selectedRoom.amenities.join(', '));
-
-    addSection('Plan de alimentación');
-    addLine(`${mealPlanLabel}, Costo plan:`, mealPlanTotalForStay > 0 ? `$${formatCantidad(mealPlanTotalForStay)}` : 'Incluido en la tarifa');
-
-    addSection('Precio pagado');
-    doc.setFont('helvetica', 'normal');
+    // Header: logo SVG (convertido a imagen) + texto Escapar.mx
+    const logoDataUrl = await getLogoAsImageDataUrl();
+    const logoW = 14;
+    const logoH = 13;
+    if (logoDataUrl) {
+      doc.addImage(logoDataUrl, 'PNG', margin, y, logoW, logoH);
+    }
+    doc.setFontSize(14);
+    doc.setTextColor(46, 125, 50);
+    doc.text('Escapar.mx', margin + (logoDataUrl ? logoW + 3 : 0), y + logoH / 2 + 1.5);
     doc.setFontSize(10);
-    const valueX = pageW - margin - 35;
-    addLine(`${nights} noches x $${formatCantidad(roomPrice)}`, `$${formatCantidad(roomTotal)}`, margin, valueX);
-    if (mealPlanTotalForStay > 0) addLine('Plan de alimentos', `$${formatCantidad(mealPlanTotalForStay)}`, margin, valueX);
-    addLine('Impuestos (16%)', `$${formatCantidad(taxes)}`, margin, valueX);
-    addLine('Tarifa de servicio', `$${formatCantidad(service)}`, margin, valueX);
-    // Línea separadora como en la pantalla de confirmación
-    y += 2;
-    doc.setDrawColor(200, 200, 200);
-    doc.setLineWidth(0.2);
-    doc.line(margin, y, pageW - margin, y);
-    y += lineHeight + 2;
-    addLine('Total pagado', `$${formatCantidad(total)}`, margin, valueX, true, cPrimary);
+    doc.setTextColor(0, 0, 0);
+    doc.setFillColor(198, 224, 180);
+    doc.rect(pageW - margin - 55, y - 5, 55, 10, 'F');
+    doc.text(`CONFIRMACIÓN: #${confNum}`, pageW - margin - 52, y + 1);
+    y += Math.max(18, logoH + 2);
+
+    // LUGAR
+    const ubicacionTexto = [hotel.location, hotel.state, hotel.country].filter(Boolean).join(', ');
+    const lugarBoxW = 22;
+    const lugarBoxH = 54;
+    doc.setFillColor(31, 73, 125);
+    doc.rect(margin, y, lugarBoxW, lugarBoxH, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('LUGAR', margin + 3, y + lugarBoxH / 2 + 2);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    const lugarContentX = margin + lugarBoxW + 4;
+    doc.text(`Hotel: ${hotel.name}`, lugarContentX, y + 8);
+    doc.text('Ubicación:', lugarContentX, y + 14);
+    doc.text(ubicacionTexto, lugarContentX, y + 20);
+    if (hotel.phone) doc.text(`Teléfono: ${hotel.phone}`, lugarContentX, y + 26);
+    y += lugarBoxH + 4;
+
+    // FECHAS y HUÉSPEDES (dos columnas)
+    const colW = (pageW - 2 * margin - 10) / 2;
+    doc.setFillColor(198, 224, 180);
+    doc.rect(margin, y, colW, 8, 'F');
+    doc.setFontSize(9);
+    doc.setTextColor(26, 61, 26);
+    doc.text('FECHAS', margin + 3, y + 5.5);
+    doc.setFillColor(31, 73, 125);
+    doc.rect(margin + colW + 10, y, colW, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.text('HUÉSPEDES', margin + colW + 13, y + 5.5);
+    y += 10;
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Check-in: ${searchParams.checkIn} 15:00`, margin + 3, y + 5);
+    doc.text(`Check-out: ${searchParams.checkOut} 12:00`, margin + 3, y + 11);
+    doc.text(`Noches: ${nights}`, margin + 3, y + 17);
+    doc.text(`Titular: ${guestDetails.firstName} ${guestDetails.lastName}`, margin + colW + 13, y + 5);
+    doc.text(`Correo: ${guestDetails.email}`, margin + colW + 13, y + 11);
+    doc.text(`Tel: ${guestDetails.phone ? `${phoneLada} ${guestDetails.phone}` : '—'}`, margin + colW + 13, y + 17);
+    doc.text(`Personas: ${personasStr}`, margin + colW + 13, y + 23);
+    y += 32;
+
+    // HABITACIÓN
+    const habitBoxW = 22;
+    doc.setFillColor(198, 224, 180);
+    doc.rect(margin, y, habitBoxW, 28, 'F');
+    doc.setTextColor(26, 61, 26);
+    doc.setFontSize(9);
+    doc.text('HABIT.', margin + 5, y + 16);
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    const habitContentX = margin + habitBoxW + 4;
+    doc.text(`Tipo: ${selectedRoom?.name ?? 'Habitación estándar'}`, habitContentX, y + 6);
+    if (selectedRoom?.type) doc.text(`Categoría: ${selectedRoom.type}`, habitContentX, y + 12);
+    doc.text(`Precio/noche: $${formatCantidad(roomPrice)}`, habitContentX, y + 18);
+    if (selectedRoom?.amenities?.length) doc.text(`Amenidades: ${selectedRoom.amenities.join(', ')}`, habitContentX, y + 24);
+    y += 32;
+
+    // Plan de alimentación
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('PLAN DE ALIMENTACIÓN', margin, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(` ${mealPlanLabel}. ${mealPlanTotalForStay > 0 ? `Costo: $${formatCantidad(mealPlanTotalForStay)}` : 'Incluido en la tarifa'}`, margin, y + 6);
+    y += 14;
+
+    // Precio pagado (columna en blanco 100 mm a la izquierda)
+    const precioBlankCol = 100;
+    const precioLeftCol = margin + precioBlankCol;
+    const precioRightCol = pageW - margin - 35;
+    doc.setFont('helvetica', 'bold');
+    doc.text('PRECIO PAGADO', precioLeftCol, y);
+    doc.setFont('helvetica', 'normal');
+    y += 7;
+    doc.text(`${nights} noches x $${formatCantidad(roomPrice)}`, precioLeftCol, y);
+    doc.text(`$${formatCantidad(roomTotal)}`, precioRightCol, y);
+    y += 6;
+    if (mealPlanTotalForStay > 0) {
+      doc.text('Plan de alimentos', precioLeftCol, y);
+      doc.text(`$${formatCantidad(mealPlanTotalForStay)}`, precioRightCol, y);
+      y += 6;
+    }
+    doc.text('Impuestos (16%)', precioLeftCol, y);
+    doc.text(`$${formatCantidad(taxes)}`, precioRightCol, y);
+    y += 6;
+    doc.text('Tarifa de servicio', precioLeftCol, y);
+    doc.text(`$${formatCantidad(service)}`, precioRightCol, y);
+    y += 8;
+    doc.setFillColor(217, 233, 246);
+    doc.rect(precioLeftCol, y - 2, pageW - margin - precioLeftCol, 10, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.text('Total pagado', precioLeftCol, y + 5);
+    doc.text(`$${formatCantidad(total)}`, precioRightCol, y + 5);
+    doc.setFont('helvetica', 'normal');
+    y += 18;
 
     if (guestDetails.specialRequests?.trim()) {
-      addSection('Solicitudes especiales');
+      doc.setFont('helvetica', 'bold');
+      doc.text('Solicitudes especiales', margin, y);
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(cValue.r, cValue.g, cValue.b);
-      const split = doc.splitTextToSize(guestDetails.specialRequests, pageW - 2 * margin);
-      doc.text(split, margin, y);
-      y += split.length * lineHeight;
+      doc.text(guestDetails.specialRequests.trim(), margin, y + 6, { maxWidth: pageW - 2 * margin });
+      y += 16;
     }
 
-    doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.setTextColor(cFooter.r, cFooter.g, cFooter.b);
-    y = Math.max(y + 12, 275);
-    doc.text('Guarde este PDF como comprobante de su reserva.', margin, y);
-    doc.text(`Confirmación #${getConfirmationNumber()} · ${hotel.name}`, margin, y + 5);
+    doc.setTextColor(80, 80, 80);
+    doc.text('Guarde este PDF como comprobante. Confirmación #' + confNum + ' · ' + hotel.name, margin, y + 8);
 
-    doc.save(`reserva-${getConfirmationNumber()}.pdf`);
+    doc.save(`reserva-${confNum}.pdf`);
   };
 
   const renderConfirmationStep = () => {
@@ -1248,7 +1283,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
                   <div className="p-4 bg-gray-50 dark:bg-[#101822] rounded-xl border border-gray-100 dark:border-[#2a3441]">
                     <p className="font-bold text-[#111418] dark:text-white">{selectedRoom?.name ?? 'Habitación estándar'}</p>
                     {selectedRoom?.type && <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">Tipo: {selectedRoom.type}</p>}
-                    <p className="text-sm text-primary font-semibold mt-1">${roomPrice.toFixed(2)} por noche</p>
+                    <p className="text-sm text-primary font-semibold mt-1">${formatCantidad(roomPrice)} por noche</p>
                     {selectedRoom?.amenities && selectedRoom.amenities.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-gray-200 dark:border-[#2a3441]">
                         <p className="text-xs text-gray-400 font-medium mb-1.5">Amenidades</p>
@@ -1270,7 +1305,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
                   <div className="p-4 bg-gray-50 dark:bg-[#101822] rounded-xl border border-gray-100 dark:border-[#2a3441] flex justify-between items-center flex-wrap gap-2">
                     <p className="font-medium text-[#111418] dark:text-white">{mealPlanLabel}</p>
                     {mealPlanTotalForStay > 0 ? (
-                      <p className="text-sm text-primary font-semibold">${mealPlanTotalForStay.toFixed(2)} ({nights} noches)</p>
+                      <p className="text-sm text-primary font-semibold">${formatCantidad(mealPlanTotalForStay)} ({nights} noches)</p>
                     ) : (
                       <p className="text-sm text-gray-500 dark:text-gray-400">Incluido en la tarifa</p>
                     )}
@@ -1284,27 +1319,27 @@ const BookingWizard: React.FC<BookingWizardProps> = ({ hotel, searchParams, onBa
                   </h3>
                   <div className="p-4 bg-gray-50 dark:bg-[#101822] rounded-xl border border-gray-100 dark:border-[#2a3441] space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-600 dark:text-gray-400">{nights} noches x ${roomPrice.toFixed(2)}</span>
-                      <span className="font-medium text-[#111418] dark:text-white">${roomTotal.toFixed(2)}</span>
+                      <span className="text-gray-600 dark:text-gray-400">{nights} noches x ${formatCantidad(roomPrice)}</span>
+                      <span className="font-medium text-[#111418] dark:text-white">${formatCantidad(roomTotal)}</span>
                     </div>
                     {mealPlanTotalForStay > 0 && (
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600 dark:text-gray-400">Plan de alimentos</span>
-                        <span className="font-medium text-[#111418] dark:text-white">${mealPlanTotalForStay.toFixed(2)}</span>
+                        <span className="font-medium text-[#111418] dark:text-white">${formatCantidad(mealPlanTotalForStay)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600 dark:text-gray-400">Impuestos (16%)</span>
-                      <span className="font-medium text-[#111418] dark:text-white">${taxes.toFixed(2)}</span>
+                      <span className="font-medium text-[#111418] dark:text-white">${formatCantidad(taxes)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600 dark:text-gray-400">Tarifa de servicio</span>
-                      <span className="font-medium text-[#111418] dark:text-white">${service.toFixed(2)}</span>
+                      <span className="font-medium text-[#111418] dark:text-white">${formatCantidad(service)}</span>
                     </div>
                     <div className="h-px bg-gray-200 dark:bg-[#2a3441] my-2" />
                     <div className="flex justify-between items-center">
                       <span className="font-bold text-[#111418] dark:text-white">Total pagado</span>
-                      <span className="text-2xl font-black text-primary">${total.toFixed(2)}</span>
+                      <span className="text-2xl font-black text-primary">${formatCantidad(total)}</span>
                     </div>
                   </div>
                 </section>

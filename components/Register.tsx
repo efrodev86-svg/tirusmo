@@ -230,7 +230,7 @@ export const Register: React.FC<RegisterProps> = ({ onLoginClick, onRegisterSucc
 
        {/* Footer Text */}
        <div className="absolute bottom-4 w-full text-center text-[10px] text-gray-400 z-20">
-         © 2024 Escapar.mx. Todos los derechos reservados.
+         © 2026 Escapar.mx. Todos los derechos reservados.
       </div>
       
     </div>
