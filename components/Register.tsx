@@ -9,7 +9,8 @@ interface RegisterProps {
 
 export const Register: React.FC<RegisterProps> = ({ onLoginClick, onRegisterSuccess, onBack }) => {
   const [formData, setFormData] = useState({
-    fullName: '',
+    firstName: '',
+    lastName: '',
     email: '',
     phone: '',
     password: '',
@@ -38,7 +39,8 @@ export const Register: React.FC<RegisterProps> = ({ onLoginClick, onRegisterSucc
         password: formData.password,
         options: {
           data: {
-            full_name: formData.fullName,
+            full_name: [formData.firstName.trim(), formData.lastName.trim()].filter(Boolean).join(' ') || null,
+            last_name: formData.lastName.trim() || null,
             phone: formData.phone,
             user_type: 'cliente'
           }
@@ -113,22 +115,35 @@ export const Register: React.FC<RegisterProps> = ({ onLoginClick, onRegisterSucc
         {/* Form */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             
-            {/* Name */}
+            {/* Nombre */}
             <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-gray-700">Nombre completo</label>
+                <label className="text-xs font-bold text-gray-700">Nombre *</label>
                 <input 
                     type="text" 
-                    placeholder="Ej. Juan Pérez"
+                    placeholder="Ej. Juan"
                     className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all placeholder:text-gray-300"
-                    value={formData.fullName}
-                    onChange={(e) => setFormData({...formData, fullName: e.target.value})}
+                    value={formData.firstName}
+                    onChange={(e) => setFormData({...formData, firstName: e.target.value})}
+                    required
+                />
+            </div>
+
+            {/* Apellidos */}
+            <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-gray-700">Apellidos *</label>
+                <input 
+                    type="text" 
+                    placeholder="Ej. Pérez García"
+                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all placeholder:text-gray-300"
+                    value={formData.lastName}
+                    onChange={(e) => setFormData({...formData, lastName: e.target.value})}
                     required
                 />
             </div>
 
             {/* Email */}
             <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-gray-700">Correo electrónico</label>
+                <label className="text-xs font-bold text-gray-700">Correo electrónico *</label>
                 <input 
                     type="email" 
                     placeholder="correo@ejemplo.com"
@@ -141,7 +156,7 @@ export const Register: React.FC<RegisterProps> = ({ onLoginClick, onRegisterSucc
 
              {/* Phone */}
              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-gray-700">Teléfono</label>
+                <label className="text-xs font-bold text-gray-700">Teléfono *</label>
                 <input 
                     type="tel" 
                     placeholder="+34 000 000 000"
@@ -155,7 +170,7 @@ export const Register: React.FC<RegisterProps> = ({ onLoginClick, onRegisterSucc
             {/* Passwords */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-bold text-gray-700">Contraseña</label>
+                    <label className="text-xs font-bold text-gray-700">Contraseña *</label>
                     <input 
                         type="password" 
                         placeholder="••••••••"
@@ -166,7 +181,7 @@ export const Register: React.FC<RegisterProps> = ({ onLoginClick, onRegisterSucc
                     />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-bold text-gray-700">Confirmar contraseña</label>
+                    <label className="text-xs font-bold text-gray-700">Confirmar contraseña *</label>
                     <input 
                         type="password" 
                         placeholder="••••••••"
