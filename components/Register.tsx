@@ -1,5 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+
+const LADA_COUNTRIES: { code: string; flag: string; name: string }[] = [
+  { code: '+52', flag: '🇲🇽', name: 'México' },
+  { code: '+1', flag: '🇺🇸', name: 'Estados Unidos' },
+  { code: '+34', flag: '🇪🇸', name: 'España' },
+  { code: '+57', flag: '🇨🇴', name: 'Colombia' },
+  { code: '+54', flag: '🇦🇷', name: 'Argentina' },
+  { code: '+56', flag: '🇨🇱', name: 'Chile' },
+  { code: '+51', flag: '🇵🇪', name: 'Perú' },
+  { code: '+58', flag: '🇻🇪', name: 'Venezuela' },
+  { code: '+593', flag: '🇪🇨', name: 'Ecuador' },
+  { code: '+502', flag: '🇬🇹', name: 'Guatemala' },
+  { code: '+53', flag: '🇨🇺', name: 'Cuba' },
+  { code: '+591', flag: '🇧🇴', name: 'Bolivia' },
+  { code: '+506', flag: '🇨🇷', name: 'Costa Rica' },
+  { code: '+507', flag: '🇵🇦', name: 'Panamá' },
+  { code: '+598', flag: '🇺🇾', name: 'Uruguay' },
+  { code: '+595', flag: '🇵🇾', name: 'Paraguay' },
+  { code: '+503', flag: '🇸🇻', name: 'El Salvador' },
+  { code: '+504', flag: '🇭🇳', name: 'Honduras' },
+  { code: '+505', flag: '🇳🇮', name: 'Nicaragua' },
+  { code: '+49', flag: '🇩🇪', name: 'Alemania' },
+  { code: '+33', flag: '🇫🇷', name: 'Francia' },
+  { code: '+39', flag: '🇮🇹', name: 'Italia' },
+  { code: '+44', flag: '🇬🇧', name: 'Reino Unido' },
+  { code: '+55', flag: '🇧🇷', name: 'Brasil' },
+];
 
 interface RegisterProps {
   onLoginClick: () => void;
@@ -16,10 +43,22 @@ export const Register: React.FC<RegisterProps> = ({ onLoginClick, onRegisterSucc
     password: '',
     confirmPassword: ''
   });
+  const [phoneLada, setPhoneLada] = useState('+52');
+  const [ladaOpen, setLadaOpen] = useState(false);
+  const ladaInputRef = useRef<HTMLInputElement>(null);
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [acceptOffers, setAcceptOffers] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const normalizeLada = (v: string) => (v.trim().startsWith('+') ? v.trim() : '+' + v.trim().replace(/\D/g, ''));
+  const currentLadaCountry = () =>
+    LADA_COUNTRIES.find((c) => c.code === phoneLada) ??
+    LADA_COUNTRIES.find((c) => c.code === normalizeLada(phoneLada)) ??
+    (phoneLada && phoneLada !== '+' ? LADA_COUNTRIES.find((c) => c.code.replace(/\D/g, '').startsWith(phoneLada.replace(/\D/g, ''))) : null);
+  const currentFlag = () => currentLadaCountry()?.flag ?? '🌐';
+
+  const fullPhone = () => [phoneLada.trim(), formData.phone.trim()].filter(Boolean).join(' ').trim();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,7 +80,7 @@ export const Register: React.FC<RegisterProps> = ({ onLoginClick, onRegisterSucc
           data: {
             full_name: [formData.firstName.trim(), formData.lastName.trim()].filter(Boolean).join(' ') || null,
             last_name: formData.lastName.trim() || null,
-            phone: formData.phone,
+            phone: fullPhone() || null,
             user_type: 'cliente'
           }
         }
@@ -155,16 +194,53 @@ export const Register: React.FC<RegisterProps> = ({ onLoginClick, onRegisterSucc
             </div>
 
              {/* Phone */}
-             <div className="flex flex-col gap-1.5">
+             <div className="flex flex-col gap-1.5 relative">
                 <label className="text-xs font-bold text-gray-700">Teléfono *</label>
-                <input 
-                    type="tel" 
-                    placeholder="+34 000 000 000"
-                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all placeholder:text-gray-300"
+                <div className="flex rounded-lg border border-gray-200 overflow-visible bg-white">
+                  <div className="flex items-center bg-gray-100 border-r border-gray-200 px-2 min-w-[100px] rounded-l-lg">
+                    <span className="text-2xl mr-2 select-none" title={currentLadaCountry()?.name}>{currentFlag()}</span>
+                    <input
+                      ref={ladaInputRef}
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="+52"
+                      value={phoneLada}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        const norm = raw.trim().startsWith('+') ? raw : '+' + raw.replace(/\D/g, '');
+                        setPhoneLada(norm || '+');
+                      }}
+                      onFocus={() => setLadaOpen(true)}
+                      onBlur={() => setTimeout(() => setLadaOpen(false), 200)}
+                      className="w-14 bg-transparent text-sm font-medium outline-none text-gray-800 py-3"
+                    />
+                  </div>
+                  {ladaOpen && (
+                    <div className="absolute z-50 mt-1 left-0 right-0 md:right-auto md:w-80 max-h-56 overflow-auto bg-white border border-gray-200 rounded-lg shadow-lg py-1 top-full">
+                      {LADA_COUNTRIES.filter((c) => !phoneLada || phoneLada === '+' || c.code.replace(/\D/g, '').startsWith(phoneLada.replace(/\D/g, ''))).slice(0, 12).map((c) => (
+                        <button
+                          key={c.code + c.name}
+                          type="button"
+                          onClick={() => { setPhoneLada(c.code); setLadaOpen(false); }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-gray-50 text-gray-800"
+                        >
+                          <span className="text-xl">{c.flag}</span>
+                          <span className="font-medium">{c.code}</span>
+                          <span className="text-gray-500">{c.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    placeholder="Ej. 55 1234 5678"
+                    className="flex-1 min-w-0 px-4 py-3 text-sm text-gray-800 focus:ring-1 focus:ring-inset focus:ring-primary outline-none rounded-r-lg placeholder:text-gray-300"
                     value={formData.phone}
-                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     required
-                />
+                  />
+                </div>
             </div>
 
             {/* Passwords */}

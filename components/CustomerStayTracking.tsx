@@ -56,20 +56,31 @@ export const CustomerStayTracking: React.FC<CustomerStayTrackingProps> = ({ rese
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const { data, error } = await supabase
+      const { data: resData, error } = await supabase
         .from('reservations')
-        .select('id, check_in, check_out, guests, total, amount_paid, data, hotels(name, location, image, phone), rooms(name, amenities)')
+        .select('id, check_in, check_out, guests, total, amount_paid, data, hotel_id, room_id')
         .eq('id', reservationId)
         .single();
       if (cancelled) return;
-      if (error || !data) {
+      if (error || !resData) {
         setReservation(null);
         setLoading(false);
         return;
       }
-      const r = data as Record<string, unknown>;
-      const hotel = r.hotels as { name?: string; location?: string; image?: string; phone?: string } | null;
-      const room = r.rooms as { name?: string; amenities?: string[] } | null;
+      const r = resData as Record<string, unknown>;
+      const hotelId = r.hotel_id as number | null | undefined;
+      const roomId = r.room_id as number | null | undefined;
+
+      let hotel: { name?: string; location?: string; image?: string; phone?: string } | null = null;
+      let room: { name?: string; amenities?: string[] } | null = null;
+      if (hotelId != null) {
+        const { data: hotelRow } = await supabase.from('hotels').select('name, location, image, phone').eq('id', hotelId).maybeSingle();
+        if (hotelRow) hotel = hotelRow as { name?: string; location?: string; image?: string; phone?: string };
+      }
+      if (roomId != null) {
+        const { data: roomRow } = await supabase.from('rooms').select('name, amenities').eq('id', roomId).maybeSingle();
+        if (roomRow) room = roomRow as { name?: string; amenities?: string[] };
+      }
       const checkIn = r.check_in ? new Date(String(r.check_in)) : null;
       const checkOut = r.check_out ? new Date(String(r.check_out)) : null;
       const guestsNum = Number(r.guests ?? 1);

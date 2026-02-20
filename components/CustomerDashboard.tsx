@@ -89,10 +89,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onLogout, 
         setReservationsLoading(false);
         return;
       }
-      // RLS filtra: propias (user_id = usuario) y de invitado con mismo email (Usuario ve reservaciones invitado con su email)
-      const { data, error } = await supabase
+      // RLS filtra: propias (user_id = usuario) y de invitado con mismo email. Sin join para evitar error de schema cache (reservations-hotels).
+      const { data: listRaw, error } = await supabase
         .from('reservations')
-        .select('id, check_in, check_out, total, status, guests, data, hotels(name, image), rooms(name)')
+        .select('id, check_in, check_out, total, status, guests, data, hotel_id, room_id')
         .order('created_at', { ascending: false });
       if (cancelled) return;
       if (error) {
@@ -101,7 +101,31 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onLogout, 
         setReservationsLoading(false);
         return;
       }
-      const list = (data || []) as Record<string, unknown>[];
+      const list = (listRaw || []) as Record<string, unknown>[];
+      const hotelIds = [...new Set(list.map((r) => r.hotel_id as number).filter((id) => id != null))] as number[];
+      const roomIds = [...new Set(list.map((r) => r.room_id as number).filter((id) => id != null))] as number[];
+
+      let hotelsMap: Record<number, { name?: string; image?: string }> = {};
+      let roomsMap: Record<number, { name?: string }> = {};
+      if (hotelIds.length > 0) {
+        const { data: hotelsData } = await supabase.from('hotels').select('id, name, image').in('id', hotelIds);
+        if (Array.isArray(hotelsData)) {
+          hotelsMap = (hotelsData as { id: number; name?: string; image?: string }[]).reduce(
+            (acc, h) => ({ ...acc, [h.id]: { name: h.name, image: h.image } }),
+            {}
+          );
+        }
+      }
+      if (roomIds.length > 0) {
+        const { data: roomsData } = await supabase.from('rooms').select('id, name').in('id', roomIds);
+        if (Array.isArray(roomsData)) {
+          roomsMap = (roomsData as { id: number; name?: string }[]).reduce(
+            (acc, r) => ({ ...acc, [r.id]: { name: r.name } }),
+            {}
+          );
+        }
+      }
+
       const mealPlanLabel = (plan: string | undefined) => {
         if (plan === 'desayuno') return 'Desayuno';
         if (plan === 'todo_incluido') return 'Todo incluido';
@@ -109,8 +133,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ onLogout, 
         return plan ? String(plan) : '—';
       };
       const cards: UserReservationCard[] = list.map((r) => {
-        const hotel = r.hotels as { name?: string; image?: string } | null;
-        const room = r.rooms as { name?: string } | null;
+        const hotel = r.hotel_id != null ? hotelsMap[r.hotel_id as number] : null;
+        const room = r.room_id != null ? roomsMap[r.room_id as number] : null;
         const reservationData = (r.data as { meal_plan?: string; payment_method?: string } | null) || {};
         const checkIn = String(r.check_in ?? '');
         const checkOut = String(r.check_out ?? '');
