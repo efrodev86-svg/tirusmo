@@ -105,18 +105,7 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
       {/* Custom Header for Login Screen */}
       <div className="absolute top-0 left-0 right-0 z-20 flex justify-between items-center px-6 py-6 md:px-10">
         <div className="flex items-center gap-3 cursor-pointer text-white" onClick={onBack}>
-          <div className="relative w-10 h-10">
-            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-                <path d="M35 30 V22 C35 18 38 15 42 15 H58 C62 15 65 18 65 22 V30" stroke="white" strokeWidth="6" strokeLinecap="round" />
-                <rect x="20" y="30" width="60" height="50" rx="8" stroke="white" strokeWidth="6" />
-                <line x1="32" y1="30" x2="32" y2="80" stroke="white" strokeWidth="6" />
-                <path d="M30 80 V88" stroke="white" strokeWidth="6" strokeLinecap="round" />
-                <path d="M70 80 V88" stroke="white" strokeWidth="6" strokeLinecap="round" />
-                <path d="M55 45 A 10 10 0 0 1 65 55" stroke="#86efac" strokeWidth="4" strokeLinecap="round" />
-                <path d="M60 40 A 18 18 0 0 1 75 55" stroke="#86efac" strokeWidth="4" strokeLinecap="round" opacity="0.7"/>
-                <path d="M55 60 L72 75 L62 77 L66 86 L61 88 L57 79 L50 82 Z" fill="#86efac" stroke="white" strokeWidth="2" />
-            </svg>
-          </div>
+          <img src="/favicon-register.svg" alt="Escapar.mx" className="w-10 h-10 object-contain" />
           <span className="text-2xl font-bold tracking-tight text-[#a8d8b7]">escapar.mx</span>
         </div>
         <div className="flex items-center gap-4 text-white text-sm font-medium">
@@ -133,16 +122,7 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
         {/* Icon & Welcome */}
         <div className="flex flex-col items-center text-center mb-8">
           <div className="w-14 h-14 flex items-center justify-center mb-4">
-            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-              <path d="M35 30 V22 C35 18 38 15 42 15 H58 C62 15 65 18 65 22 V30" stroke="#2b7cee" strokeWidth="6" strokeLinecap="round" />
-              <rect x="20" y="30" width="60" height="50" rx="8" stroke="#2b7cee" strokeWidth="6" />
-              <line x1="32" y1="30" x2="32" y2="80" stroke="#2b7cee" strokeWidth="6" />
-              <path d="M30 80 V88" stroke="#2b7cee" strokeWidth="6" strokeLinecap="round" />
-              <path d="M70 80 V88" stroke="#2b7cee" strokeWidth="6" strokeLinecap="round" />
-              <path d="M55 45 A 10 10 0 0 1 65 55" stroke="#86efac" strokeWidth="4" strokeLinecap="round" />
-              <path d="M60 40 A 18 18 0 0 1 75 55" stroke="#86efac" strokeWidth="4" strokeLinecap="round" opacity="0.7" />
-              <path d="M55 60 L72 75 L62 77 L66 86 L61 88 L57 79 L50 82 Z" fill="#86efac" stroke="white" strokeWidth="2" />
-            </svg>
+            <img src="/favicon.svg" alt="Escapar.mx" className="w-full h-full object-contain" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Bienvenido de nuevo</h2>
           <p className="text-gray-500 text-sm">Accede a tu panel de gestión personalizada</p>
