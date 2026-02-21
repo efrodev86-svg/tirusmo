@@ -96,6 +96,57 @@ const AMENITY_CATEGORY_LABELS: Record<string, string> = {
   general: 'General',
 };
 
+const LADA_COUNTRIES: { code: string; flag: string; name: string }[] = [
+  { code: '+52', flag: '🇲🇽', name: 'México' },
+  { code: '+1', flag: '🇺🇸', name: 'Estados Unidos' },
+  { code: '+34', flag: '🇪🇸', name: 'España' },
+  { code: '+57', flag: '🇨🇴', name: 'Colombia' },
+  { code: '+54', flag: '🇦🇷', name: 'Argentina' },
+  { code: '+56', flag: '🇨🇱', name: 'Chile' },
+  { code: '+51', flag: '🇵🇪', name: 'Perú' },
+  { code: '+58', flag: '🇻🇪', name: 'Venezuela' },
+  { code: '+593', flag: '🇪🇨', name: 'Ecuador' },
+  { code: '+502', flag: '🇬🇹', name: 'Guatemala' },
+  { code: '+53', flag: '🇨🇺', name: 'Cuba' },
+  { code: '+591', flag: '🇧🇴', name: 'Bolivia' },
+  { code: '+506', flag: '🇨🇷', name: 'Costa Rica' },
+  { code: '+507', flag: '🇵🇦', name: 'Panamá' },
+  { code: '+598', flag: '🇺🇾', name: 'Uruguay' },
+  { code: '+595', flag: '🇵🇾', name: 'Paraguay' },
+  { code: '+503', flag: '🇸🇻', name: 'El Salvador' },
+  { code: '+504', flag: '🇭🇳', name: 'Honduras' },
+  { code: '+505', flag: '🇳🇮', name: 'Nicaragua' },
+  { code: '+49', flag: '🇩🇪', name: 'Alemania' },
+  { code: '+33', flag: '🇫🇷', name: 'Francia' },
+  { code: '+39', flag: '🇮🇹', name: 'Italia' },
+  { code: '+44', flag: '🇬🇧', name: 'Reino Unido' },
+  { code: '+55', flag: '🇧🇷', name: 'Brasil' },
+];
+
+function parsePhone(phone: string): { lada: string; local: string } {
+  const raw = (phone || '').trim();
+  if (!raw) return { lada: '+52', local: '' };
+  const withPlus = raw.startsWith('+') ? raw : '+' + raw.replace(/\D/g, '');
+  const sorted = [...LADA_COUNTRIES].sort((a, b) => b.code.length - a.code.length);
+  for (const c of sorted) {
+    if (withPlus === c.code || withPlus.startsWith(c.code)) {
+      const local = raw.startsWith('+') ? raw.slice(c.code.length).trim() : raw.replace(/^\D*/, '').replace(new RegExp('^' + c.code.replace(/\+/, '\\+')), '').trim();
+      return { lada: c.code, local: local.replace(/\s/g, ' ') };
+    }
+  }
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length >= 2) {
+    for (const c of sorted) {
+      const codeDigits = c.code.replace(/\D/g, '');
+      if (digits.startsWith(codeDigits)) {
+        const local = digits.slice(codeDigits.length).replace(/(\d{2})(?=\d)/g, '$1 ').trim();
+        return { lada: c.code, local };
+      }
+    }
+  }
+  return { lada: '+52', local: raw };
+}
+
 type AmenityCatalogItem = { id: number; slug: string; label: string; category: string; sort_order: number };
 
 type MealPlanItem = { type: string; cost: number; cost_children?: number };
@@ -176,6 +227,10 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
   const mapInstanceRef = useRef<unknown>(null);
   const markerInstanceRef = useRef<unknown>(null);
   const didGeocodeInitialRef = useRef(false);
+  const [phoneLada, setPhoneLada] = useState('+52');
+  const [phoneLocal, setPhoneLocal] = useState('');
+  const [ladaOpen, setLadaOpen] = useState(false);
+  const ladaInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -261,6 +316,9 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
           !Array.isArray(data.meal_plans) ||
           data.meal_plans.filter((m: { type?: string }) => m?.type === 'desayuno' || m?.type === 'todo_incluido').length === 0
         );
+        const { lada, local } = parsePhone(data.phone || '');
+        setPhoneLada(lada);
+        setPhoneLocal(local);
       }
       setLoading(false);
     })();
@@ -417,9 +475,10 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
     setSaving(true);
     setError(null);
     try {
+      const phoneFull = [phoneLada.trim(), phoneLocal.trim()].filter(Boolean).join(' ').trim() || null;
       const payload = {
         name: form.name.trim(),
-        phone: form.phone.trim() || null,
+        phone: phoneFull,
         location: form.location.trim(),
         municipality: form.municipality.trim() || null,
         state: form.state.trim() || null,
@@ -451,7 +510,10 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
         onBack();
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Error al guardar');
+      const message = e && typeof e === 'object' && 'message' in e
+        ? String((e as { message: string }).message)
+        : e instanceof Error ? e.message : 'Error al guardar';
+      setError(message);
     } finally {
       setSaving(false);
     }
@@ -509,15 +571,60 @@ export const AdminHotelEdit: React.FC<AdminHotelEditProps> = ({ hotelId, onBack,
 
           <div className="space-y-6">
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Nombre *</label>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Nombre <span className="text-red-500">*</span></label>
               <input type="text" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary" required />
             </div>
-            <div>
+            <div className="relative">
               <label className="block text-sm font-bold text-gray-700 mb-1">Teléfono de contacto</label>
-              <input type="tel" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary" placeholder="Ej. +52 55 1234 5678" />
+              <div className="flex rounded-lg border border-gray-200 overflow-visible bg-white">
+                <div className="flex items-center bg-gray-100 border-r border-gray-200 px-2 min-w-[100px]">
+                  <span className="text-2xl mr-2 select-none" title={LADA_COUNTRIES.find((c) => c.code === phoneLada) ?? LADA_COUNTRIES.find((c) => phoneLada !== '+' && c.code.replace(/\D/g, '').startsWith(phoneLada.replace(/\D/g, '')))?.name}>
+                    {(LADA_COUNTRIES.find((c) => c.code === phoneLada) ?? LADA_COUNTRIES.find((c) => phoneLada !== '+' && c.code.replace(/\D/g, '').startsWith(phoneLada.replace(/\D/g, ''))))?.flag ?? '🌐'}
+                  </span>
+                  <input
+                    ref={ladaInputRef}
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="+52"
+                    value={phoneLada}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const norm = raw.trim().startsWith('+') ? raw : '+' + raw.replace(/\D/g, '');
+                      setPhoneLada(norm || '+');
+                    }}
+                    onFocus={() => setLadaOpen(true)}
+                    onBlur={() => setTimeout(() => setLadaOpen(false), 200)}
+                    className="w-14 bg-transparent text-sm font-medium outline-none text-gray-800 py-2.5"
+                  />
+                </div>
+                {ladaOpen && (
+                  <div className="absolute z-50 mt-1 left-0 right-0 md:right-auto md:w-80 max-h-56 overflow-auto bg-white border border-gray-200 rounded-lg shadow-lg py-1 top-full">
+                    {LADA_COUNTRIES.filter((c) => !phoneLada || phoneLada === '+' || c.code.replace(/\D/g, '').startsWith(phoneLada.replace(/\D/g, ''))).slice(0, 12).map((c) => (
+                      <button
+                        key={c.code + c.name}
+                        type="button"
+                        onClick={() => { setPhoneLada(c.code); setLadaOpen(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-2 text-left text-sm hover:bg-gray-100 text-gray-800"
+                      >
+                        <span className="text-xl">{c.flag}</span>
+                        <span className="font-medium">{c.code}</span>
+                        <span className="text-gray-500">{c.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="Ej. 55 1234 5678"
+                  value={phoneLocal}
+                  onChange={(e) => setPhoneLocal(e.target.value)}
+                  className="flex-1 min-w-0 px-4 py-2.5 text-sm outline-none focus:ring-1 focus:ring-primary bg-white text-gray-800 border-0 rounded-r-lg"
+                />
+              </div>
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Ubicación *</label>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Ubicación <span className="text-red-500">*</span></label>
               <div className="flex gap-2">
                 <input
                   ref={locationInputRef}
