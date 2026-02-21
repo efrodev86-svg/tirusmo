@@ -1,0 +1,2 @@
+# SPA: todas las rutas sirven index.html para que el cliente enrute (evitar 404 en /login, /registro, etc.)
+/*    /index.html   200
