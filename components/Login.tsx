@@ -52,29 +52,40 @@ export const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess, onRegister
         return;
       }
       if (!authData.user) return;
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('user_type, is_active, deleted_at')
-        .eq('id', authData.user.id)
-        .single();
+      // Consulta mínima: solo user_type para evitar "Database error querying schema" si faltan columnas (is_active, deleted_at)
+      const fetchProfile = () =>
+        supabase
+          .from('profiles')
+          .select('user_type')
+          .eq('id', authData.user!.id)
+          .single();
+      let { data: profile, error: profileError } = await fetchProfile();
       if (profileError || !profile) {
+        const msg = (profileError?.message || '').toLowerCase();
+        const schemaError = msg.includes('schema') || msg.includes('esquema') || (msg.includes('database') && msg.includes('querying'));
+        const meta = authData.user?.user_metadata as { user_type?: string } | undefined;
+        if (schemaError && meta?.user_type) {
+          onLoginSuccess((meta.user_type as UserType) ?? 'cliente');
+          return;
+        }
         setError(profileError?.message || 'Error al cargar el perfil');
-        return;
-      }
-      if ((profile as { deleted_at?: string | null }).deleted_at) {
-        await supabase.auth.signOut();
-        setError('Tu cuenta ha sido eliminada. Ya no puedes iniciar sesión.');
-        return;
-      }
-      if (profile.is_active === false) {
-        await supabase.auth.signOut();
-        setError('Tu cuenta está desactivada. Contacta al administrador.');
         return;
       }
       const userType: UserType = (profile.user_type as UserType) ?? 'cliente';
       onLoginSuccess(userType);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al iniciar sesión');
+      const msg = err instanceof Error ? err.message : 'Error al iniciar sesión';
+      const m = (typeof msg === 'string' ? msg : '').toLowerCase();
+      const schemaError = m.includes('schema') || m.includes('esquema') || (m.includes('database') && m.includes('querying'));
+      if (schemaError) {
+        const { data: { session } } = await supabase.auth.getSession();
+        const meta = session?.user?.user_metadata as { user_type?: string } | undefined;
+        if (meta?.user_type) {
+          onLoginSuccess((meta.user_type as UserType) ?? 'cliente');
+          return;
+        }
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }

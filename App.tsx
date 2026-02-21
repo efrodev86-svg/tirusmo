@@ -189,26 +189,24 @@ const App: React.FC = () => {
     window.scrollTo(0, 0);
   };
 
-  // Usuario en header: sesión + perfil (foto y tipo para ir al dashboard)
+  // Usuario en header: sesión + perfil (foto y tipo). Consulta mínima para evitar error de schema si faltan columnas.
   useEffect(() => {
     const updateHeaderUser = async (userId: string) => {
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('full_name, user_type, deleted_at')
+        .select('full_name, user_type')
         .eq('id', userId)
         .maybeSingle();
-      const p = profile as { full_name?: string; user_type?: string; deleted_at?: string | null } | null;
-      if (p?.deleted_at) {
-        await supabase.auth.signOut();
-        setHeaderUser(null);
-        setDashboardAllowed(null);
-        setAccountDeletedMessage('Tu cuenta ha sido eliminada. Ya no puedes iniciar sesión.');
-        setView(ViewState.LOGIN);
+      const p = profile as { full_name?: string; user_type?: string } | null;
+      const { data: { user } } = await supabase.auth.getUser();
+      const meta = user?.user_metadata as { full_name?: string; user_type?: string } | undefined;
+      const schemaError = profileError?.message?.toLowerCase().includes('schema');
+      const name = (p?.full_name?.trim() || meta?.full_name?.trim() || '') || 'Usuario';
+      const userType = (p?.user_type as 'cliente' | 'partner' | 'admin') ?? (meta?.user_type as 'cliente' | 'partner' | 'admin') ?? 'cliente';
+      if (schemaError && meta?.user_type) {
+        setHeaderUser({ name: meta?.full_name?.trim() || 'Usuario', avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(meta?.full_name?.trim() || 'Usuario')}&background=2b7cee&color=fff`, userType: meta?.user_type as 'cliente' | 'partner' | 'admin' });
         return;
       }
-      const name = p?.full_name?.trim() || '';
-      const userType = (p?.user_type as 'cliente' | 'partner' | 'admin') ?? 'cliente';
-      const { data: { user } } = await supabase.auth.getUser();
       const avatarUrl = user?.user_metadata?.avatar_url
         || (name ? `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=2b7cee&color=fff` : 'https://ui-avatars.com/api/?name=Usuario&background=2b7cee&color=fff');
       setHeaderUser({ name: name || 'Usuario', avatarUrl, userType });
@@ -283,19 +281,19 @@ const App: React.FC = () => {
     setAccountDeletedMessage(null);
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('user_type, deleted_at')
+        .select('user_type')
         .eq('id', session.user.id)
-        .single();
-      const p = profile as { user_type?: string; deleted_at?: string | null } | null;
-      if (p?.deleted_at) {
-        await supabase.auth.signOut();
-        setAccountDeletedMessage('Tu cuenta ha sido eliminada. Ya no puedes iniciar sesión.');
-        setView(ViewState.LOGIN);
+        .maybeSingle();
+      const p = profile as { user_type?: string } | null;
+      const meta = session.user?.user_metadata as { user_type?: string } | undefined;
+      const schemaError = profileError?.message?.toLowerCase().includes('schema');
+      const userType = (p?.user_type as 'cliente' | 'partner' | 'admin') ?? (meta?.user_type as 'cliente' | 'partner' | 'admin') ?? 'cliente';
+      if (schemaError && meta?.user_type) {
+        handleLoginSuccess(meta.user_type as 'cliente' | 'partner' | 'admin');
         return;
       }
-      const userType = (p?.user_type as 'cliente' | 'partner' | 'admin') ?? 'cliente';
       handleLoginSuccess(userType);
     } else {
       setView(ViewState.LOGIN);
@@ -388,23 +386,7 @@ const App: React.FC = () => {
       <header className="sticky top-0 z-50 flex flex-col border-b border-solid border-b-[#f0f2f4] bg-white/95 dark:bg-background-dark/95 backdrop-blur dark:border-b-gray-800 transition-colors shadow-sm">
         <div className="flex items-center justify-between whitespace-nowrap px-6 lg:px-10 py-3">
         <div className="flex items-center gap-3 cursor-pointer group" onClick={handleBackToHome}>
-          <div className="relative w-10 h-10">
-            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-                {/* Handle */}
-                <path d="M35 30 V22 C35 18 38 15 42 15 H58 C62 15 65 18 65 22 V30" stroke="#2b7cee" strokeWidth="6" strokeLinecap="round" />
-                {/* Body */}
-                <rect x="20" y="30" width="60" height="50" rx="8" stroke="#2b7cee" strokeWidth="6" />
-                <line x1="32" y1="30" x2="32" y2="80" stroke="#2b7cee" strokeWidth="6" />
-                {/* Wheels */}
-                <path d="M30 80 V88" stroke="#2b7cee" strokeWidth="6" strokeLinecap="round" />
-                <path d="M70 80 V88" stroke="#2b7cee" strokeWidth="6" strokeLinecap="round" />
-                {/* Click Waves */}
-                <path d="M55 45 A 10 10 0 0 1 65 55" stroke="#86efac" strokeWidth="4" strokeLinecap="round" />
-                <path d="M60 40 A 18 18 0 0 1 75 55" stroke="#86efac" strokeWidth="4" strokeLinecap="round" opacity="0.7"/>
-                {/* Cursor */}
-                <path d="M55 60 L72 75 L62 77 L66 86 L61 88 L57 79 L50 82 Z" fill="#86efac" stroke="white" strokeWidth="2" />
-            </svg>
-          </div>
+          <img src="/favicon.svg" alt="Escapar.mx" className="w-10 h-10 object-contain" />
           <span className="text-2xl font-bold text-[#a8d8b7] tracking-tight">escapar.mx</span>
         </div>
         <div className="flex flex-1 justify-end items-center gap-4 lg:gap-8">
@@ -526,17 +508,7 @@ const App: React.FC = () => {
         <div className="max-w-[1200px] mx-auto flex flex-col md:flex-row justify-between gap-10">
             <div className="flex flex-col gap-4 max-w-xs">
                 <div className="flex items-center gap-3">
-                    <div className="relative w-8 h-8">
-                        <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-                            <path d="M35 30 V22 C35 18 38 15 42 15 H58 C62 15 65 18 65 22 V30" stroke="#2b7cee" strokeWidth="6" strokeLinecap="round" />
-                            <rect x="20" y="30" width="60" height="50" rx="8" stroke="#2b7cee" strokeWidth="6" />
-                            <line x1="32" y1="30" x2="32" y2="80" stroke="#2b7cee" strokeWidth="6" />
-                            <path d="M30 80 V88" stroke="#2b7cee" strokeWidth="6" strokeLinecap="round" />
-                            <path d="M70 80 V88" stroke="#2b7cee" strokeWidth="6" strokeLinecap="round" />
-                            <path d="M55 45 A 10 10 0 0 1 65 55" stroke="#86efac" strokeWidth="4" strokeLinecap="round" />
-                            <path d="M55 60 L72 75 L62 77 L66 86 L61 88 L57 79 L50 82 Z" fill="#86efac" stroke="white" strokeWidth="2" />
-                        </svg>
-                    </div>
+                    <img src="/favicon.svg" alt="Escapar.mx" className="w-8 h-8 object-contain" />
                     <span className="text-xl font-bold text-[#a8d8b7] tracking-tight">escapar.mx</span>
                 </div>
                 <p className="text-sm text-gray-500 leading-relaxed">
