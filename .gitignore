@@ -26,3 +26,6 @@ dist-ssr
 # Env (claves públicas pero mejor no versionar)
 .env
 .env.local
+
+# Seed local (no subir a GitHub)
+supabase/seed.sql
